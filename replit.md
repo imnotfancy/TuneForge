@@ -114,11 +114,26 @@ GET  /api/search/isrc/:isrc   - Lookup track by ISRC code
 - **Icons**: Feather icons from @expo/vector-icons
 
 ## Job Processing Flow
-1. User uploads audio → Creates job in `pending` status
-2. Job moves through: `identifying` → `acquiring` → `separating` → `generating_midi`
-3. Each stage updates progress (0-100) and progressMessage
-4. Completed jobs have stems available for download
-5. Assets expire after configurable time (default 24 hours)
+1. User searches/selects song → Creates job with spotify_id/apple_music_id/isrc
+2. **Identify**: Odesli lookup enriches with platform IDs (Tidal, Deezer, Qobuz)
+3. **Acquire**: Download FLAC using platform IDs (SpotiFLAC-inspired approach)
+4. **Separate**: Stem separation via configured provider
+5. **Generate MIDI**: MIDI generation for melodic stems
+6. Assets expire after configurable time (default 24 hours)
+
+### Source Types
+- `spotify_id` - Spotify track ID (e.g., "7tFiyTwD0nx5a1eklYtX2J")
+- `apple_music_id` - Apple Music track ID
+- `isrc` - International Standard Recording Code
+- `file_upload` - Direct audio file upload
+- `spotify_url` - Spotify track URL
+- `audio_url` - Direct audio URL
+
+### Audio Acquisition Strategy (SpotiFLAC-inspired)
+1. Use Odesli to get platform-specific track IDs (Tidal, Deezer, Qobuz)
+2. Attempt download from each platform in priority order
+3. Fall back to ISRC-based search if platform IDs unavailable
+4. Clear error message if no provider configured
 
 ## Provider Configuration
 
@@ -161,15 +176,18 @@ ACRCLOUD_ACCESS_SECRET - ACRCloud secret for HMAC signature
 ```
 
 ## Recent Changes
+- Implemented SpotiFLAC-inspired ISRC/platform ID lookup using Odesli
+- Extended database schema with spotify_id and apple_music_id source types
+- Added createJobFromSong API with fallback logic (ISRC → Spotify → Apple Music)
+- Job processor now enriches tracks with Tidal/Deezer/Qobuz IDs via Odesli
+- Audio acquisition attempts download by platform ID before falling back to ISRC
 - Added intuitive onboarding overlay for first-time users with 5-step carousel
-- Implemented text-based song search using OpenAI LLM with real-time suggestions
+- Implemented text-based song search using iTunes Search API with Odesli enrichment
 - Added humming/singing recognition via ACRCloud API
 - Created SongHistoryGallery showing recently analyzed songs
 - Built AnalyzingAnimation with deep learning neural network visualization
 - Extended theme with primary, primaryMuted, backgroundElevated, border colors
 - Added mode toggle (Record/Search/History) on AudioInputScreen
-- Added Play Audio / Hum toggle for different recording modes
-- Integrated all components with graceful error handling
 
 ## User Preferences
 - Dark mode only (music production aesthetic)

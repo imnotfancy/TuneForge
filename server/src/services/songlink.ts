@@ -41,6 +41,7 @@ export interface TrackInfo {
   qobuzId?: string;
   amazonId?: string;
   platforms: Record<string, string>;
+  platformUrls: Record<string, string>;
 }
 
 const SONGLINK_API_URL = 'https://api.song.link/v1-alpha.1/links';
@@ -63,15 +64,37 @@ export async function lookupByIsrc(isrc: string): Promise<SonglinkResponse | nul
   }
 }
 
+export async function lookupBySpotifyId(spotifyId: string): Promise<SonglinkResponse | null> {
+  try {
+    const spotifyUrl = `https://open.spotify.com/track/${spotifyId}`;
+    return await lookupByUrl(spotifyUrl);
+  } catch (error) {
+    console.error('Spotify ID lookup failed:', error);
+    return null;
+  }
+}
+
+export async function lookupByAppleMusicId(appleMusicId: string): Promise<SonglinkResponse | null> {
+  try {
+    const appleMusicUrl = `https://music.apple.com/us/song/${appleMusicId}`;
+    return await lookupByUrl(appleMusicUrl);
+  } catch (error) {
+    console.error('Apple Music ID lookup failed:', error);
+    return null;
+  }
+}
+
 export function extractTrackInfo(response: SonglinkResponse): TrackInfo {
   const entities = Object.values(response.entitiesByUniqueId);
   const primaryEntity = entities[0];
   
   const platforms: Record<string, string> = {};
   const platformIds: Record<string, string> = {};
+  const platformUrls: Record<string, string> = {};
   
   for (const [platform, link] of Object.entries(response.linksByPlatform)) {
     platforms[platform] = link.url;
+    platformUrls[platform] = link.url;
     
     const entity = response.entitiesByUniqueId[link.entityUniqueId];
     if (entity) {
@@ -98,6 +121,7 @@ export function extractTrackInfo(response: SonglinkResponse): TrackInfo {
     qobuzId: platformIds['qobuz'],
     amazonId: platformIds['amazonMusic'],
     platforms,
+    platformUrls,
   };
 }
 

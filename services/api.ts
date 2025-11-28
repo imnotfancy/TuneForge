@@ -108,7 +108,7 @@ export interface SongSuggestion {
   albumArt?: string;
   isrc?: string;
   confidence: number;
-  source: 'llm' | 'acrcloud' | 'musicbrainz';
+  source: 'llm' | 'acrcloud' | 'musicbrainz' | 'itunes' | 'spotify' | 'songstats';
   spotifyId?: string;
   appleMusicId?: string;
 }
@@ -316,6 +316,34 @@ class TuneForgeAPI {
     }
   }
 
+  async searchUnified(query: string, limit: number = 10): Promise<TextSearchResult> {
+    try {
+      const response = await api.get('/search/unified', { params: { query, limit } });
+      return {
+        query: response.data.query,
+        type: 'unified',
+        suggestions: response.data.suggestions,
+        searchId: response.data.searchId,
+      };
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  async searchByItunes(query: string, limit: number = 10): Promise<TextSearchResult> {
+    try {
+      const response = await api.get('/search/itunes', { params: { query, limit } });
+      return {
+        query,
+        type: 'itunes',
+        suggestions: response.data.suggestions,
+        searchId: `itunes-${Date.now()}`,
+      };
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
   async createJobFromISRC(
     isrc: string,
     metadata?: { title?: string; artist?: string; album?: string; albumArt?: string }
@@ -330,6 +358,63 @@ class TuneForgeAPI {
     } catch (error) {
       throw this.handleError(error);
     }
+  }
+
+  async createJobFromSpotifyId(
+    spotifyId: string,
+    metadata?: { title?: string; artist?: string; album?: string; albumArt?: string }
+  ): Promise<{ id: string; status: string; createdAt: string }> {
+    try {
+      const response = await api.post('/jobs', {
+        sourceType: 'spotify_id',
+        sourceValue: spotifyId,
+        ...metadata,
+      });
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  async createJobFromAppleMusicId(
+    appleMusicId: string,
+    metadata?: { title?: string; artist?: string; album?: string; albumArt?: string }
+  ): Promise<{ id: string; status: string; createdAt: string }> {
+    try {
+      const response = await api.post('/jobs', {
+        sourceType: 'apple_music_id',
+        sourceValue: appleMusicId,
+        ...metadata,
+      });
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  async createJobFromSong(
+    song: SongSuggestion
+  ): Promise<{ id: string; status: string; createdAt: string }> {
+    const metadata = {
+      title: song.title,
+      artist: song.artist,
+      album: song.album,
+      albumArt: song.albumArt,
+    };
+
+    if (song.isrc) {
+      return this.createJobFromISRC(song.isrc, metadata);
+    }
+    
+    if (song.spotifyId) {
+      return this.createJobFromSpotifyId(song.spotifyId, metadata);
+    }
+    
+    if (song.appleMusicId) {
+      return this.createJobFromAppleMusicId(song.appleMusicId, metadata);
+    }
+
+    throw { message: 'No valid identifier found for this song', code: 'NO_IDENTIFIER' };
   }
 
   private handleError(error: unknown): ApiError {

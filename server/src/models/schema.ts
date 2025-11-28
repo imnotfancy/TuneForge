@@ -14,7 +14,9 @@ export const sourceTypeEnum = pgEnum('source_type', [
   'spotify_url',
   'audio_url',
   'file_upload',
-  'isrc'
+  'isrc',
+  'spotify_id',
+  'apple_music_id'
 ]);
 
 export const stemTypeEnum = pgEnum('stem_type', [

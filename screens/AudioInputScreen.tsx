@@ -232,10 +232,10 @@ export default function AudioInputScreen() {
   const handleSelectSong = async (song: SongSuggestion) => {
     setSelectedSong(song);
     
-    if (!song.isrc) {
+    if (!song.isrc && !song.spotifyId && !song.appleMusicId) {
       Alert.alert(
         "Cannot Process",
-        "This song doesn't have an ISRC code. Try recording or uploading the audio instead."
+        "This song doesn't have a valid identifier. Try recording or uploading the audio instead."
       );
       return;
     }
@@ -245,35 +245,34 @@ export default function AudioInputScreen() {
     setProcessingProgress(20);
     
     try {
-      const { id } = await tuneForgeAPI.createJobFromISRC(song.isrc, {
-        title: song.title,
-        artist: song.artist,
-        album: song.album,
-        albumArt: song.albumArt,
-      });
+      const { id } = await tuneForgeAPI.createJobFromSong(song);
       
-      setProcessingMessage("Processing track...");
-      setProcessingProgress(60);
+      setProcessingMessage("Acquiring FLAC source...");
+      setProcessingProgress(40);
       
       setTimeout(() => {
-        setIsProcessing(false);
-        setProcessingProgress(0);
-        setSelectedSong(null);
+        setProcessingMessage("Starting stem separation...");
+        setProcessingProgress(60);
         
-        navigation.navigate("RecognitionResults", {
-          audioUri: '',
-          jobId: id,
-        });
-      }, 500);
-    } catch (error) {
+        setTimeout(() => {
+          setIsProcessing(false);
+          setProcessingProgress(0);
+          setSelectedSong(null);
+          
+          navigation.navigate("RecognitionResults", {
+            audioUri: '',
+            jobId: id,
+          });
+        }, 300);
+      }, 400);
+    } catch (error: any) {
       setIsProcessing(false);
       setProcessingProgress(0);
       setSelectedSong(null);
       console.error("Failed to process song:", error);
-      Alert.alert(
-        "Processing Error",
-        "Failed to process this song. Please try again."
-      );
+      
+      const errorMessage = error?.message || "Failed to process this song. Please try again.";
+      Alert.alert("Processing Error", errorMessage);
     }
   };
 

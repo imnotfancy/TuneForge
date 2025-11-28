@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { db } from '../models/db.js';
 import { jobs, assets, Job } from '../models/schema.js';
-import { identifyTrack } from '../services/songlink.js';
+import { identifyTrack, lookupBySpotifyId, lookupByAppleMusicId, extractTrackInfo } from '../services/songlink.js';
 import { providerManager } from '../services/providers/index.js';
 import { stemManager } from '../services/stems.js';
 import { midiManager } from '../services/midi.js';
@@ -36,7 +36,34 @@ async function updateJobStatus(
 }
 
 async function identifyStep(job: Job): Promise<Partial<Job>> {
-  if (job.isrc && job.title && job.artist) {
+  if (job.title && job.artist) {
+    if (job.isrc && job.songlinkData) {
+      return {};
+    }
+    
+    let response = null;
+    
+    if (job.sourceType === 'spotify_id') {
+      response = await lookupBySpotifyId(job.sourceValue);
+    } else if (job.sourceType === 'apple_music_id') {
+      response = await lookupByAppleMusicId(job.sourceValue);
+    }
+    
+    if (response) {
+      const trackInfo = extractTrackInfo(response);
+      return {
+        isrc: trackInfo.isrc,
+        spotifyId: trackInfo.spotifyId || job.spotifyId,
+        songlinkData: {
+          platforms: trackInfo.platforms,
+          platformUrls: trackInfo.platformUrls,
+          deezerId: trackInfo.deezerId,
+          tidalId: trackInfo.tidalId,
+          qobuzId: trackInfo.qobuzId,
+        } as any,
+      };
+    }
+    
     return {};
   }
   
@@ -46,6 +73,16 @@ async function identifyStep(job: Job): Promise<Partial<Job>> {
     trackInfo = await identifyTrack(job.sourceValue);
   } else if (job.sourceType === 'isrc') {
     trackInfo = await identifyTrack(job.sourceValue);
+  } else if (job.sourceType === 'spotify_id') {
+    const response = await lookupBySpotifyId(job.sourceValue);
+    if (response) {
+      trackInfo = extractTrackInfo(response);
+    }
+  } else if (job.sourceType === 'apple_music_id') {
+    const response = await lookupByAppleMusicId(job.sourceValue);
+    if (response) {
+      trackInfo = extractTrackInfo(response);
+    }
   }
   
   if (!trackInfo) {
@@ -59,7 +96,13 @@ async function identifyStep(job: Job): Promise<Partial<Job>> {
     album: trackInfo.album,
     albumArt: trackInfo.albumArt,
     spotifyId: trackInfo.spotifyId,
-    songlinkData: trackInfo.platforms as any,
+    songlinkData: {
+      platforms: trackInfo.platforms,
+      platformUrls: trackInfo.platformUrls,
+      deezerId: trackInfo.deezerId,
+      tidalId: trackInfo.tidalId,
+      qobuzId: trackInfo.qobuzId,
+    } as any,
   };
 }
 
@@ -79,27 +122,49 @@ async function acquireAudioStep(job: Job): Promise<Partial<Job>> {
     throw new Error('Uploaded file not found');
   }
   
-  if (!job.isrc) {
-    throw new Error('No ISRC available for audio acquisition');
-  }
-  
   const outputDir = path.join(STORAGE_DIR, 'audio', job.id);
   if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true });
   }
   
   const outputPath = path.join(outputDir, 'master.flac');
-  const result = await providerManager.downloadByIsrc(job.isrc, outputPath);
   
-  if (!result.success) {
-    throw new Error(result.error || 'Failed to acquire audio');
+  const songlinkData = job.songlinkData as Record<string, any> | null;
+  const platformIds = {
+    deezerId: songlinkData?.deezerId as string | undefined,
+    tidalId: songlinkData?.tidalId as string | undefined,
+    qobuzId: songlinkData?.qobuzId as string | undefined,
+  };
+  
+  if (platformIds.deezerId || platformIds.tidalId || platformIds.qobuzId) {
+    console.log('Attempting download by platform IDs:', platformIds);
+    const result = await providerManager.downloadByPlatformIds(platformIds, outputPath);
+    
+    if (result.success) {
+      return {
+        masterAudioPath: result.filePath,
+        masterAudioFormat: result.format,
+        masterAudioService: result.provider,
+      };
+    }
+    console.log('Platform ID download failed:', result.error);
   }
   
-  return {
-    masterAudioPath: result.filePath,
-    masterAudioFormat: result.format,
-    masterAudioService: result.provider,
-  };
+  if (job.isrc) {
+    console.log('Attempting download by ISRC:', job.isrc);
+    const result = await providerManager.downloadByIsrc(job.isrc, outputPath);
+    
+    if (result.success) {
+      return {
+        masterAudioPath: result.filePath,
+        masterAudioFormat: result.format,
+        masterAudioService: result.provider,
+      };
+    }
+    console.log('ISRC download failed:', result.error);
+  }
+  
+  throw new Error('Audio not available - no FLAC provider configured. Configure Tidal, Deezer, or Qobuz API keys in Settings.');
 }
 
 async function separateStemsStep(job: Job): Promise<Partial<Job>> {

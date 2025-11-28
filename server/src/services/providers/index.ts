@@ -85,6 +85,43 @@ export class ProviderManager {
     const result = await this.downloadTrack(searchResult.provider, searchResult.trackId, outputPath);
     return { ...result, provider: searchResult.provider };
   }
+  
+  async downloadByPlatformIds(
+    platformIds: { deezerId?: string; tidalId?: string; qobuzId?: string },
+    outputPath: string
+  ): Promise<DownloadResult & { provider?: string }> {
+    const attempts: { provider: string; trackId: string }[] = [];
+    
+    if (platformIds.tidalId) {
+      attempts.push({ provider: 'tidal', trackId: platformIds.tidalId });
+    }
+    if (platformIds.deezerId) {
+      attempts.push({ provider: 'deezer', trackId: platformIds.deezerId });
+    }
+    if (platformIds.qobuzId) {
+      attempts.push({ provider: 'qobuz', trackId: platformIds.qobuzId });
+    }
+    
+    for (const attempt of attempts) {
+      const provider = this.providers.find(p => p.name === attempt.provider);
+      if (!provider) continue;
+      
+      console.log(`Attempting download from ${attempt.provider} with ID: ${attempt.trackId}`);
+      
+      try {
+        const result = await provider.downloadTrack(attempt.trackId, outputPath);
+        if (result.success) {
+          console.log(`Successfully downloaded from ${attempt.provider}`);
+          return { ...result, provider: attempt.provider };
+        }
+        console.log(`Download from ${attempt.provider} failed: ${result.error}`);
+      } catch (error) {
+        console.log(`Download from ${attempt.provider} threw error:`, error);
+      }
+    }
+    
+    return { success: false, error: 'Track not available on any configured provider' };
+  }
 }
 
 export const providerManager = new ProviderManager();

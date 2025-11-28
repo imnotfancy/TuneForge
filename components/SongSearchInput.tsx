@@ -74,14 +74,14 @@ export function SongSearchInput({ onSelectSong, placeholder = "Search by title, 
       
       if (searchType === 'title') {
         try {
-          const result = await tuneForgeAPI.searchBySpotify(searchQuery, 10);
+          const result = await tuneForgeAPI.searchUnified(searchQuery, 10);
           results = result.suggestions;
         } catch {
           try {
+            results = await searchMusicBrainz(searchQuery, 10);
+          } catch {
             const result = await tuneForgeAPI.searchByText(searchQuery, searchType);
             results = result.suggestions;
-          } catch {
-            results = await searchMusicBrainz(searchQuery, 10);
           }
         }
       } else {

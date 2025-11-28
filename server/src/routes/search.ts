@@ -5,6 +5,7 @@ import axios from 'axios';
 import FormData from 'form-data';
 import fs from 'fs';
 import * as songstats from '../services/songstats.js';
+import * as itunes from '../services/itunes.js';
 
 const router = Router();
 
@@ -485,6 +486,37 @@ router.get('/songstats/stats/:isrc', async (req: Request, res: Response) => {
   }
 });
 
+router.get('/itunes', async (req: Request, res: Response) => {
+  try {
+    const { query, limit } = req.query;
+    
+    if (!query || typeof query !== 'string') {
+      return res.status(400).json({ error: 'Query required' });
+    }
+
+    const searchLimit = Math.min(20, Math.max(1, parseInt(limit as string) || 10));
+    const results = await itunes.searchWithEnrichment(query, searchLimit);
+    
+    const suggestions: SongSuggestion[] = results.map((track, index) => ({
+      id: track.id,
+      title: track.title,
+      artist: track.artist,
+      album: track.album,
+      albumArt: track.albumArt,
+      isrc: track.isrc,
+      confidence: 0.9 - (index * 0.05),
+      source: 'itunes' as any,
+      spotifyId: track.spotifyId,
+      appleMusicId: track.appleMusicId || String(track.trackId),
+    }));
+
+    return res.json({ suggestions, source: 'itunes' });
+  } catch (error) {
+    console.error('iTunes search error:', error);
+    return res.status(500).json({ error: 'iTunes search failed' });
+  }
+});
+
 router.get('/unified', async (req: Request, res: Response) => {
   try {
     const { query, limit } = req.query;
@@ -495,28 +527,51 @@ router.get('/unified', async (req: Request, res: Response) => {
 
     const searchLimit = Math.min(20, Math.max(1, parseInt(limit as string) || 10));
     let suggestions: SongSuggestion[] = [];
-    let primarySource = 'musicbrainz';
+    let primarySource = 'itunes';
 
     try {
-      const { searchTracks } = await import('../services/spotify.js');
-      const spotifyResults = await searchTracks(query, searchLimit);
+      const itunesResults = await itunes.searchWithEnrichment(query, searchLimit);
       
-      if (spotifyResults.length > 0) {
-        primarySource = 'spotify';
-        suggestions = spotifyResults.map((track, index) => ({
+      if (itunesResults.length > 0) {
+        suggestions = itunesResults.map((track, index) => ({
           id: track.id,
           title: track.title,
           artist: track.artist,
           album: track.album,
           albumArt: track.albumArt,
           isrc: track.isrc,
-          confidence: (track.popularity || 50) / 100,
-          source: 'spotify' as const,
+          confidence: 0.95 - (index * 0.03),
+          source: 'itunes' as any,
           spotifyId: track.spotifyId,
+          appleMusicId: track.appleMusicId || String(track.trackId),
         }));
       }
-    } catch (spotifyError) {
-      console.log('Spotify search unavailable, falling back to MusicBrainz');
+    } catch (itunesError) {
+      console.log('iTunes search error:', itunesError);
+    }
+
+    if (suggestions.length === 0) {
+      try {
+        const { searchTracks } = await import('../services/spotify.js');
+        const spotifyResults = await searchTracks(query, searchLimit);
+        
+        if (spotifyResults.length > 0) {
+          primarySource = 'spotify';
+          suggestions = spotifyResults.map((track, index) => ({
+            id: track.id,
+            title: track.title,
+            artist: track.artist,
+            album: track.album,
+            albumArt: track.albumArt,
+            isrc: track.isrc,
+            confidence: (track.popularity || 50) / 100,
+            source: 'spotify' as const,
+            spotifyId: track.spotifyId,
+          }));
+        }
+      } catch (spotifyError) {
+        console.log('Spotify search unavailable');
+      }
     }
 
     if (suggestions.length === 0) {
@@ -537,7 +592,26 @@ router.get('/unified', async (req: Request, res: Response) => {
         );
 
         const recordings = mbResponse.data.recordings || [];
+        primarySource = 'musicbrainz';
         
+        const knownOriginalArtists = [
+          'queen', 'beatles', 'led zeppelin', 'pink floyd', 'rolling stones',
+          'the beatles', 'the rolling stones', 'the who', 'metallica', 'nirvana',
+          'michael jackson', 'madonna', 'prince', 'david bowie', 'elton john',
+          'stevie wonder', 'aretha franklin', 'bob dylan', 'elvis presley',
+          'taylor swift', 'beyoncé', 'beyonce', 'adele', 'ed sheeran', 'drake',
+          'kanye west', 'kendrick lamar', 'rihanna', 'lady gaga', 'bruno mars',
+          'coldplay', 'radiohead', 'u2', 'oasis', 'green day', 'foo fighters',
+          'red hot chili peppers', 'arctic monkeys', 'the strokes', 'muse',
+        ];
+        
+        const coverIndicators = [
+          'orchestra', 'symphony', 'ensemble', 'tribute', 'cover', 'karaoke',
+          'instrumental', 'acoustic version by', 'performed by', 'sung by',
+          'rendition', 'interpretation', 'arrangement', 'piano version',
+          'string quartet', 'brass band', 'choir', 'chorus',
+        ];
+
         const artistScores: Record<string, number> = {};
         recordings.forEach((rec: any) => {
           const artist = rec['artist-credit']?.[0]?.name || 'Unknown';
@@ -551,8 +625,10 @@ router.get('/unified', async (req: Request, res: Response) => {
             const queryLower = query.toLowerCase();
             const titleLower = (rec.title || '').toLowerCase();
             const artistLower = artist.toLowerCase();
+            const albumLower = (rec.releases?.[0]?.title || '').toLowerCase();
             
             let relevanceBoost = 0;
+            
             if (titleLower.includes(queryLower) || queryLower.includes(titleLower)) {
               relevanceBoost += 30;
             }
@@ -561,6 +637,26 @@ router.get('/unified', async (req: Request, res: Response) => {
             }
             if (rec.releases?.length > 5) {
               relevanceBoost += 10;
+            }
+            
+            if (knownOriginalArtists.includes(artistLower)) {
+              relevanceBoost += 100;
+            }
+            
+            const isCover = coverIndicators.some(indicator => 
+              artistLower.includes(indicator) || 
+              albumLower.includes(indicator) ||
+              titleLower.includes(indicator)
+            );
+            
+            if (isCover) {
+              relevanceBoost -= 80;
+            }
+            
+            const isLiveOrBootleg = albumLower.includes('live') && 
+              (albumLower.match(/\d{4}/) || albumLower.includes('tour'));
+            if (isLiveOrBootleg && !titleLower.includes('live')) {
+              relevanceBoost -= 20;
             }
             
             return {

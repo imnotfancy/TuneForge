@@ -44,11 +44,12 @@ const upload = multer({
 });
 
 const createJobSchema = z.object({
-  sourceType: z.enum(['spotify_url', 'audio_url', 'isrc']),
+  sourceType: z.enum(['spotify_url', 'audio_url', 'isrc', 'spotify_id', 'apple_music_id']),
   sourceValue: z.string().min(1),
   title: z.string().optional(),
   artist: z.string().optional(),
   album: z.string().optional(),
+  albumArt: z.string().optional(),
 });
 
 router.get('/', async (req: Request, res: Response) => {
@@ -111,7 +112,7 @@ router.post('/', async (req: Request, res: Response) => {
       });
     }
     
-    const { sourceType, sourceValue, title, artist, album } = validation.data;
+    const { sourceType, sourceValue, title, artist, album, albumArt } = validation.data;
     
     const newJob: NewJob = {
       sourceType,
@@ -119,6 +120,7 @@ router.post('/', async (req: Request, res: Response) => {
       title,
       artist,
       album,
+      albumArt,
       status: 'pending',
     };
     
