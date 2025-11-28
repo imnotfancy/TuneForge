@@ -4,15 +4,21 @@
 TuneForge is a full-stack mobile app that allows users to record or upload audio clips for music recognition, metadata enrichment, and creative stem separation/remixing. Features a modular provider system allowing users to mix-and-match their preferred services for recognition, stem separation, and MIDI generation.
 
 ## Current State
-- **Phase**: Backend Integration
+- **Phase**: Backend Integration + Enhanced UX
 - **Stack**: Expo React Native (SDK 54) + Node.js/Express Backend
-- **Status**: Mobile app integrated with backend API for job processing
+- **Status**: Mobile app with onboarding, multiple input methods, and history gallery
 
 ## Architecture
 
 ### Frontend (Expo React Native)
 - Stack-based navigation with the following screens:
-  - `AudioInputScreen` - Main landing screen with recording/upload
+  - `AudioInputScreen` - Main landing screen with:
+    - Mode toggle (Record/Search/History)
+    - Audio recording with Play/Hum toggle
+    - Text-based song search with LLM suggestions
+    - Song history gallery
+    - Onboarding overlay for first-time users
+    - Deep learning analyzing animation
   - `RecognitionResultsScreen` - Display job status and track metadata
   - `RemixProcessingScreen` - Stem separation progress and playback
   - `ExportScreen` - Download and share stems/MIDI (Modal)
@@ -26,13 +32,16 @@ TuneForge is a full-stack mobile app that allows users to record or upload audio
 
 ### API Endpoints
 ```
-GET  /api/health          - Health check
-GET  /api/jobs            - List recent jobs
-POST /api/jobs            - Create job from URL/ISRC
-POST /api/jobs/upload     - Upload audio and create job
-GET  /api/jobs/:id        - Get job status and metadata
-GET  /api/jobs/:id/stems/:type   - Download stem file
-GET  /api/jobs/:id/download      - Get download info
+GET  /api/health              - Health check
+GET  /api/jobs                - List recent jobs
+POST /api/jobs                - Create job from URL/ISRC
+POST /api/jobs/upload         - Upload audio and create job
+GET  /api/jobs/:id            - Get job status and metadata
+GET  /api/jobs/:id/stems/:type - Download stem file
+GET  /api/jobs/:id/download   - Get download info
+POST /api/search/text         - LLM-powered text search for songs
+POST /api/search/humming      - ACRCloud humming recognition
+GET  /api/search/isrc/:isrc   - Lookup track by ISRC code
 ```
 
 ### Database Schema
@@ -84,6 +93,10 @@ GET  /api/jobs/:id/download      - Get download info
   - ExportItem.tsx, SettingsSection.tsx, LoadingOverlay.tsx
   - HeaderTitle.tsx, ErrorBoundary.tsx, ThemedText.tsx
   - ThemedView.tsx, ScreenScrollView.tsx, Button.tsx
+  - SongSearchInput.tsx (LLM-powered search with suggestions)
+  - AnalyzingAnimation.tsx (Neural network visualization)
+  - SongHistoryGallery.tsx (Recent songs grid)
+  - OnboardingOverlay.tsx (First-time user experience)
 
 /hooks
   - useTheme.ts, useColorScheme.ts, useScreenInsets.ts
@@ -142,15 +155,21 @@ REDIS_URL          - Redis for job queue (optional)
 STORAGE_DIR        - File storage directory
 PORT               - Backend server port (default 3001)
 CORS_ORIGIN        - Allowed origins
+OPENAI_API_KEY     - OpenAI API key for text search (optional)
+ACRCLOUD_ACCESS_KEY   - ACRCloud access key for humming recognition
+ACRCLOUD_ACCESS_SECRET - ACRCloud secret for HMAC signature
 ```
 
 ## Recent Changes
-- Integrated mobile app with backend API
-- Job-based async processing with status polling
-- Real-time progress updates in RecognitionResultsScreen
-- RemixProcessingScreen polls job status for stem results
-- API client with retry logic and error handling
-- ProgressBar component supports optional status text
+- Added intuitive onboarding overlay for first-time users with 5-step carousel
+- Implemented text-based song search using OpenAI LLM with real-time suggestions
+- Added humming/singing recognition via ACRCloud API
+- Created SongHistoryGallery showing recently analyzed songs
+- Built AnalyzingAnimation with deep learning neural network visualization
+- Extended theme with primary, primaryMuted, backgroundElevated, border colors
+- Added mode toggle (Record/Search/History) on AudioInputScreen
+- Added Play Audio / Hum toggle for different recording modes
+- Integrated all components with graceful error handling
 
 ## User Preferences
 - Dark mode only (music production aesthetic)
@@ -159,9 +178,9 @@ CORS_ORIGIN        - Allowed origins
 - Haptic feedback on key interactions
 
 ## Next Steps
-1. Add provider API integrations (ACRCloud, LALAL.AI, Fadr)
-2. Implement actual stem separation processing
-3. Add MIDI generation logic
-4. Implement file download on mobile
-5. Add local caching with AsyncStorage
-6. Polish error handling and retry logic
+1. Set up OpenAI and ACRCloud API keys for search features
+2. Add provider API integrations (LALAL.AI, Fadr for stem separation)
+3. Implement actual stem separation processing
+4. Add MIDI generation logic
+5. Implement file download on mobile
+6. Add local caching with AsyncStorage for offline history

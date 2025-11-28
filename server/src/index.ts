@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import jobsRouter from './routes/jobs.js';
+import searchRouter from './routes/search.js';
 import { cleanupExpiredAssets } from './workers/jobProcessor.js';
 
 const app = express();
@@ -25,6 +26,7 @@ app.get('/api/health', (_req, res) => {
 });
 
 app.use('/api/jobs', jobsRouter);
+app.use('/api/search', searchRouter);
 
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error('Unhandled error:', err);

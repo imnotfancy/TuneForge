@@ -100,6 +100,32 @@ export interface ApiError {
   details?: unknown;
 }
 
+export interface SongSuggestion {
+  id: string;
+  title: string;
+  artist: string;
+  album?: string;
+  albumArt?: string;
+  isrc?: string;
+  confidence: number;
+  source: 'llm' | 'acrcloud' | 'musicbrainz';
+  spotifyId?: string;
+  appleMusicId?: string;
+}
+
+export interface TextSearchResult {
+  query: string;
+  type: string;
+  suggestions: SongSuggestion[];
+  searchId: string;
+}
+
+export interface HummingSearchResult {
+  suggestions: SongSuggestion[];
+  searchId: string;
+  message?: string;
+}
+
 class TuneForgeAPI {
   async healthCheck(): Promise<{ status: string; timestamp: string; version: string }> {
     try {
@@ -242,15 +268,53 @@ class TuneForgeAPI {
   }[]> {
     try {
       const response = await api.get('/jobs', { params: { limit } });
-      return response.data.jobs;
+      return response.data?.jobs || [];
     } catch (error) {
-      throw this.handleError(error);
+      console.error('Failed to fetch recent jobs:', error);
+      return [];
     }
   }
   
   getStemDownloadUrl(jobId: string, stemType: string, format: 'audio' | 'midi' = 'audio'): string {
     const baseUrl = getBaseUrl();
     return `${baseUrl}/jobs/${jobId}/stems/${stemType}${format === 'midi' ? '?format=midi' : ''}`;
+  }
+
+  async searchByText(
+    query: string, 
+    type: 'title' | 'lyrics' | 'description' = 'title'
+  ): Promise<TextSearchResult> {
+    try {
+      const response = await api.post('/search/text', { query, type });
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  async searchByHumming(audioBuffer: string): Promise<HummingSearchResult> {
+    try {
+      const response = await api.post('/search/humming', { audioBuffer });
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  async createJobFromISRC(
+    isrc: string,
+    metadata?: { title?: string; artist?: string; album?: string; albumArt?: string }
+  ): Promise<{ id: string; status: string; createdAt: string }> {
+    try {
+      const response = await api.post('/jobs', {
+        sourceType: 'isrc',
+        sourceValue: isrc,
+        ...metadata,
+      });
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
   }
 
   private handleError(error: unknown): ApiError {
