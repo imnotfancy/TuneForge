@@ -210,10 +210,24 @@ router.post('/humming', async (req: Request, res: Response) => {
     // Define the root directory for audio files
     const AUDIO_ROOT = path.resolve(process.cwd(), 'uploads');
 
+    let safeResolvedPath: string | null = null;
     if (audioPath) {
-      // Normalize and validate audioPath relative to the root
-      const resolvedPath = path.resolve(AUDIO_ROOT, audioPath);
-      if (!resolvedPath.startsWith(AUDIO_ROOT + path.sep)) {
+      // Normalize and validate audioPath relative to the root, using realpathSync
+      let candidatePath: string;
+      try {
+        candidatePath = path.resolve(AUDIO_ROOT, audioPath);
+        const realPath = fs.realpathSync(candidatePath);
+        // Check for containment. Allow exactly AUDIO_ROOT or any file within it (subdirectory, file).
+        if (
+          realPath === AUDIO_ROOT ||
+          (realPath.startsWith(AUDIO_ROOT + path.sep))
+        ) {
+          safeResolvedPath = realPath;
+        } else {
+          return res.status(400).json({ error: 'Invalid audioPath' });
+        }
+      } catch (e) {
+        // If realpathSync fails (file doesn't exist or invalid), treat as error
         return res.status(400).json({ error: 'Invalid audioPath' });
       }
     }
@@ -240,10 +254,9 @@ router.post('/humming', async (req: Request, res: Response) => {
 
     const formData = new FormData();
     
-    if (audioPath) {
-      const resolvedPath = path.resolve(AUDIO_ROOT, audioPath);
-      if (fs.existsSync(resolvedPath)) {
-        formData.append('sample', fs.createReadStream(resolvedPath));
+    if (safeResolvedPath) {
+      if (fs.existsSync(safeResolvedPath)) {
+        formData.append('sample', fs.createReadStream(safeResolvedPath));
       } else {
         return res.status(400).json({ error: 'audioPath does not exist' });
       }
