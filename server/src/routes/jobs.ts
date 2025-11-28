@@ -59,6 +59,26 @@ router.get('/', async (req: Request, res: Response) => {
       limit,
     });
     
+    const jobIds = allJobs.map(j => j.id);
+    const jobAssets = jobIds.length > 0 
+      ? await db.query.assets.findMany({
+          where: (assets, { inArray }) => inArray(assets.jobId, jobIds),
+        })
+      : [];
+    
+    const assetsByJobId = jobAssets.reduce((acc, asset) => {
+      if (!acc[asset.jobId]) {
+        acc[asset.jobId] = [];
+      }
+      acc[asset.jobId].push({
+        id: asset.id,
+        type: asset.type,
+        stemType: asset.stemType,
+        hasMidi: asset.hasMidi,
+      });
+      return acc;
+    }, {} as Record<string, Array<{ id: string; type: string; stemType: string | null; hasMidi: boolean | null }>>);
+    
     return res.json({
       jobs: allJobs.map(job => ({
         id: job.id,
@@ -71,6 +91,7 @@ router.get('/', async (req: Request, res: Response) => {
         progressMessage: job.progressMessage,
         createdAt: job.createdAt,
         updatedAt: job.updatedAt,
+        stems: assetsByJobId[job.id]?.filter(a => a.stemType) || [],
       })),
     });
   } catch (error) {

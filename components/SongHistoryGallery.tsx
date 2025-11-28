@@ -31,6 +31,13 @@ const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const CARD_WIDTH = (SCREEN_WIDTH - Spacing.xl * 2 - Spacing.md) / 2;
 const CARD_HEIGHT = CARD_WIDTH * 1.3;
 
+interface StemInfo {
+  id: string;
+  type: string;
+  stemType: string | null;
+  hasMidi: boolean | null;
+}
+
 interface HistoryItem {
   id: string;
   status: string;
@@ -42,6 +49,7 @@ interface HistoryItem {
   progressMessage?: string;
   createdAt: string;
   updatedAt: string;
+  stems?: StemInfo[];
 }
 
 interface SongHistoryGalleryProps {
@@ -278,6 +286,8 @@ function HistoryCard({
   };
 
   const isProcessing = ['pending', 'identifying', 'acquiring', 'separating', 'generating_midi'].includes(item.status);
+  const stemCount = item.stems?.length ?? 0;
+  const midiCount = item.stems?.filter(s => s.hasMidi)?.length ?? 0;
 
   return (
     <AnimatedPressable
@@ -309,6 +319,15 @@ function HistoryCard({
           />
         </View>
 
+        {stemCount > 0 ? (
+          <View style={styles.stemsBadge}>
+            <Feather name="layers" size={10} color={Colors.dark.text} />
+            <ThemedText type="small" style={styles.stemsBadgeText}>
+              {stemCount}
+            </ThemedText>
+          </View>
+        ) : null}
+
         {isProcessing ? (
           <View style={styles.progressOverlay}>
             <View style={styles.progressBar}>
@@ -330,9 +349,19 @@ function HistoryCard({
         <ThemedText type="caption" numberOfLines={1} style={styles.cardArtist}>
           {item.artist || "Unknown Artist"}
         </ThemedText>
-        <ThemedText type="small" style={styles.cardTime}>
-          {formatTimeAgo(item.createdAt)}
-        </ThemedText>
+        <View style={styles.cardFooter}>
+          <ThemedText type="small" style={styles.cardTime}>
+            {formatTimeAgo(item.createdAt)}
+          </ThemedText>
+          {midiCount > 0 ? (
+            <View style={styles.midiBadge}>
+              <Feather name="music" size={10} color={Colors.dark.secondary} />
+              <ThemedText type="small" style={styles.midiBadgeText}>
+                MIDI
+              </ThemedText>
+            </View>
+          ) : null}
+        </View>
       </View>
     </AnimatedPressable>
   );
@@ -471,8 +500,44 @@ const styles = StyleSheet.create({
   cardArtist: {
     color: Colors.dark.textSecondary,
   },
+  cardFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 4,
+  },
   cardTime: {
     color: Colors.dark.textDisabled,
-    marginTop: 2,
+  },
+  stemsBadge: {
+    position: "absolute",
+    top: Spacing.sm,
+    left: Spacing.sm,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    paddingVertical: 3,
+    paddingHorizontal: 6,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    borderRadius: BorderRadius.sm,
+  },
+  stemsBadgeText: {
+    color: Colors.dark.text,
+    fontSize: 10,
+    fontWeight: "600",
+  },
+  midiBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    paddingVertical: 2,
+    paddingHorizontal: 5,
+    backgroundColor: Colors.dark.secondary + "20",
+    borderRadius: BorderRadius.sm,
+  },
+  midiBadgeText: {
+    color: Colors.dark.secondary,
+    fontSize: 9,
+    fontWeight: "600",
   },
 });

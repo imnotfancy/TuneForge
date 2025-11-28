@@ -265,6 +265,12 @@ class TuneForgeAPI {
     progressMessage?: string;
     createdAt: string;
     updatedAt: string;
+    stems?: Array<{
+      id: string;
+      type: string;
+      stemType: string | null;
+      hasMidi: boolean | null;
+    }>;
   }[]> {
     try {
       const response = await api.get('/jobs', { params: { limit } });
