@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import axios from 'axios';
 import FormData from 'form-data';
 import fs from 'fs';
+import * as songstats from '../services/songstats.js';
 
 const router = Router();
 
@@ -15,7 +16,7 @@ interface SongSuggestion {
   albumArt?: string;
   isrc?: string;
   confidence: number;
-  source: 'llm' | 'acrcloud' | 'musicbrainz';
+  source: 'llm' | 'acrcloud' | 'musicbrainz' | 'songstats' | 'spotify';
   spotifyId?: string;
   appleMusicId?: string;
 }
@@ -409,6 +410,213 @@ router.get('/spotify/isrc/:isrc', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Spotify ISRC lookup error:', error);
     return res.status(500).json({ error: 'ISRC lookup failed' });
+  }
+});
+
+router.get('/songstats/isrc/:isrc', async (req: Request, res: Response) => {
+  try {
+    const { isrc } = req.params;
+    
+    if (!songstats.isConfigured()) {
+      return res.status(503).json({ 
+        error: 'Songstats not configured',
+        message: 'Please configure RAPIDAPI_KEY in settings',
+      });
+    }
+
+    const track = await songstats.searchByIsrc(isrc);
+    
+    if (!track) {
+      return res.status(404).json({ error: 'Track not found' });
+    }
+
+    return res.json({ track, source: 'songstats' });
+  } catch (error) {
+    console.error('Songstats ISRC lookup error:', error);
+    return res.status(500).json({ error: 'ISRC lookup failed' });
+  }
+});
+
+router.get('/songstats/spotify/:spotifyId', async (req: Request, res: Response) => {
+  try {
+    const { spotifyId } = req.params;
+    
+    if (!songstats.isConfigured()) {
+      return res.status(503).json({ 
+        error: 'Songstats not configured',
+        message: 'Please configure RAPIDAPI_KEY in settings',
+      });
+    }
+
+    const track = await songstats.searchBySpotifyId(spotifyId);
+    
+    if (!track) {
+      return res.status(404).json({ error: 'Track not found' });
+    }
+
+    return res.json({ track, source: 'songstats' });
+  } catch (error) {
+    console.error('Songstats Spotify lookup error:', error);
+    return res.status(500).json({ error: 'Track lookup failed' });
+  }
+});
+
+router.get('/songstats/stats/:isrc', async (req: Request, res: Response) => {
+  try {
+    const { isrc } = req.params;
+    
+    if (!songstats.isConfigured()) {
+      return res.status(503).json({ 
+        error: 'Songstats not configured',
+        message: 'Please configure RAPIDAPI_KEY in settings',
+      });
+    }
+
+    const stats = await songstats.getTrackStats(isrc);
+    
+    if (!stats) {
+      return res.status(404).json({ error: 'Stats not found' });
+    }
+
+    return res.json({ stats, source: 'songstats' });
+  } catch (error) {
+    console.error('Songstats track stats error:', error);
+    return res.status(500).json({ error: 'Stats lookup failed' });
+  }
+});
+
+router.get('/unified', async (req: Request, res: Response) => {
+  try {
+    const { query, limit } = req.query;
+    
+    if (!query || typeof query !== 'string') {
+      return res.status(400).json({ error: 'Query required' });
+    }
+
+    const searchLimit = Math.min(20, Math.max(1, parseInt(limit as string) || 10));
+    let suggestions: SongSuggestion[] = [];
+    let primarySource = 'musicbrainz';
+
+    try {
+      const { searchTracks } = await import('../services/spotify.js');
+      const spotifyResults = await searchTracks(query, searchLimit);
+      
+      if (spotifyResults.length > 0) {
+        primarySource = 'spotify';
+        suggestions = spotifyResults.map((track, index) => ({
+          id: track.id,
+          title: track.title,
+          artist: track.artist,
+          album: track.album,
+          albumArt: track.albumArt,
+          isrc: track.isrc,
+          confidence: (track.popularity || 50) / 100,
+          source: 'spotify' as const,
+          spotifyId: track.spotifyId,
+        }));
+      }
+    } catch (spotifyError) {
+      console.log('Spotify search unavailable, falling back to MusicBrainz');
+    }
+
+    if (suggestions.length === 0) {
+      try {
+        const mbResponse = await axios.get(
+          'https://musicbrainz.org/ws/2/recording',
+          {
+            params: {
+              query: query,
+              fmt: 'json',
+              limit: searchLimit * 2,
+            },
+            headers: {
+              'User-Agent': 'TuneForge/1.0.0 (tuneforge@example.com)',
+            },
+            timeout: 10000,
+          }
+        );
+
+        const recordings = mbResponse.data.recordings || [];
+        
+        const artistScores: Record<string, number> = {};
+        recordings.forEach((rec: any) => {
+          const artist = rec['artist-credit']?.[0]?.name || 'Unknown';
+          artistScores[artist] = (artistScores[artist] || 0) + (rec.score || 0);
+        });
+
+        const ranked = recordings
+          .map((rec: any) => {
+            const artist = rec['artist-credit']?.[0]?.name || 'Unknown';
+            const artistPopularity = artistScores[artist] || 0;
+            const queryLower = query.toLowerCase();
+            const titleLower = (rec.title || '').toLowerCase();
+            const artistLower = artist.toLowerCase();
+            
+            let relevanceBoost = 0;
+            if (titleLower.includes(queryLower) || queryLower.includes(titleLower)) {
+              relevanceBoost += 30;
+            }
+            if (artistLower.includes(queryLower) || queryLower.includes(artistLower)) {
+              relevanceBoost += 20;
+            }
+            if (rec.releases?.length > 5) {
+              relevanceBoost += 10;
+            }
+            
+            return {
+              ...rec,
+              adjustedScore: (rec.score || 0) + (artistPopularity / 10) + relevanceBoost,
+            };
+          })
+          .sort((a: any, b: any) => b.adjustedScore - a.adjustedScore);
+
+        suggestions = ranked.slice(0, searchLimit).map((rec: any, index: number) => ({
+          id: `mb-${rec.id || index}`,
+          title: rec.title || 'Unknown',
+          artist: rec['artist-credit']?.[0]?.name || 'Unknown',
+          album: rec.releases?.[0]?.title,
+          isrc: rec.isrcs?.[0],
+          confidence: Math.min(1, (rec.adjustedScore || rec.score || 0) / 100),
+          source: 'musicbrainz' as const,
+        }));
+      } catch (mbError) {
+        console.error('MusicBrainz search error:', mbError);
+      }
+    }
+
+    if (songstats.isConfigured() && suggestions.length > 0) {
+      const enrichedSuggestions = await Promise.all(
+        suggestions.slice(0, 5).map(async (suggestion) => {
+          if (suggestion.spotifyId) {
+            try {
+              const trackInfo = await songstats.searchBySpotifyId(suggestion.spotifyId);
+              if (trackInfo) {
+                return {
+                  ...suggestion,
+                  albumArt: trackInfo.albumArt || suggestion.albumArt,
+                  isrc: trackInfo.isrc || suggestion.isrc,
+                  appleMusicId: trackInfo.appleMusicId,
+                };
+              }
+            } catch (e) {
+            }
+          }
+          return suggestion;
+        })
+      );
+      
+      suggestions = [...enrichedSuggestions, ...suggestions.slice(5)];
+    }
+
+    return res.json({
+      query,
+      suggestions,
+      source: primarySource,
+      searchId: `unified-${Date.now()}`,
+    });
+  } catch (error) {
+    console.error('Unified search error:', error);
+    return res.status(500).json({ error: 'Search failed' });
   }
 });
 
