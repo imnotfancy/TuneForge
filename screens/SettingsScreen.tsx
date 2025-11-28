@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { StyleSheet, View, Alert, Platform, Pressable, ScrollView } from "react-native";
+import React from "react";
+import { StyleSheet, View, Alert, Platform, Pressable, ActivityIndicator } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 import * as WebBrowser from "expo-web-browser";
@@ -14,10 +14,13 @@ import {
   SecureInputRow,
 } from "@/components/SettingsSection";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
-
-type RecognitionProvider = "acrcloud" | "acoustid";
-type StemProvider = "fadr" | "lalalai" | "moises" | "audioshake" | "gaudio" | "uvr5" | "audiostrip" | "none";
-type MidiProvider = "fadr" | "basicpitch" | "ripx" | "none";
+import {
+  useSettings,
+  RecognitionProvider,
+  StemProvider,
+  MidiProvider,
+  RecordingQuality,
+} from "@/hooks/useSettings";
 
 interface ProviderInfo {
   id: string;
@@ -445,22 +448,20 @@ function LevelBadge({ level, required }: { level: number; required: boolean }) {
 
 export default function SettingsScreen() {
   const navigation = useNavigation();
+  const { providerSettings, apiKeys, isLoading, updateProviderSettings, updateApiKey, clearAllSettings } = useSettings();
 
-  const [recognitionProvider, setRecognitionProvider] =
-    useState<RecognitionProvider>("acrcloud");
-  const [stemProvider, setStemProvider] = useState<StemProvider>("lalalai");
-  const [midiProvider, setMidiProvider] = useState<MidiProvider>("fadr");
-
-  const [acrCloudKey, setAcrCloudKey] = useState("");
-  const [acrCloudSecret, setAcrCloudSecret] = useState("");
-  const [acoustIdKey, setAcoustIdKey] = useState("");
-  const [fadrToken, setFadrToken] = useState("");
-  const [lalalaiKey, setLalalaiKey] = useState("");
-  const [moisesKey, setMoisesKey] = useState("");
-  const [gaudioKey, setGaudioKey] = useState("");
-  const [audioshakeKey, setAudioshakeKey] = useState("");
-  const [audiostripKey, setAudiostripKey] = useState("");
-  const [recordingQuality, setRecordingQuality] = useState("High");
+  const { recognitionProvider, stemProvider, midiProvider, recordingQuality } = providerSettings;
+  const {
+    acrCloudKey,
+    acrCloudSecret,
+    acoustIdKey,
+    fadrToken,
+    lalalaiKey,
+    moisesKey,
+    gaudioKey,
+    audioshakeKey,
+    audiostripKey,
+  } = apiKeys;
 
   const appVersion = Constants.expoConfig?.version ?? "1.0.0";
 
@@ -471,6 +472,15 @@ export default function SettingsScreen() {
   const needsAudioshakeKey = stemProvider === "audioshake";
   const needsAudiostripKey = stemProvider === "audiostrip";
   const hasApiKeysNeeded = needsFadrToken || needsLalalaiKey || needsMoisesKey || needsGaudioKey || needsAudioshakeKey || needsAudiostripKey;
+
+  if (isLoading) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <ActivityIndicator size="large" color={Colors.dark.accent} />
+        <ThemedText type="body" style={styles.loadingText}>Loading settings...</ThemedText>
+      </View>
+    );
+  }
 
   const handleClearCache = (type: "recognition" | "stems") => {
     const title =
@@ -510,12 +520,12 @@ export default function SettingsScreen() {
       "Recording Quality",
       "Higher quality produces better recognition results but uses more storage.",
       [
-        { text: "Low (64kbps)", onPress: () => setRecordingQuality("Low") },
+        { text: "Low (64kbps)", onPress: () => updateProviderSettings({ recordingQuality: "Low" }) },
         {
           text: "Medium (128kbps)",
-          onPress: () => setRecordingQuality("Medium"),
+          onPress: () => updateProviderSettings({ recordingQuality: "Medium" }),
         },
-        { text: "High (256kbps)", onPress: () => setRecordingQuality("High") },
+        { text: "High (256kbps)", onPress: () => updateProviderSettings({ recordingQuality: "High" }) },
         { text: "Cancel", style: "cancel" },
       ]
     );
@@ -545,7 +555,7 @@ export default function SettingsScreen() {
           <ProviderSelector
             providers={RECOGNITION_PROVIDERS}
             selectedId={recognitionProvider}
-            onSelect={(id) => setRecognitionProvider(id as RecognitionProvider)}
+            onSelect={(id) => updateProviderSettings({ recognitionProvider: id as RecognitionProvider })}
           />
         </SettingsSection>
 
@@ -555,7 +565,7 @@ export default function SettingsScreen() {
               icon="key"
               label="Access Key"
               value={acrCloudKey}
-              onChangeText={setAcrCloudKey}
+              onChangeText={(text) => updateApiKey("acrCloudKey", text)}
               placeholder="Enter ACRCloud access key"
               tooltip={API_TOOLTIPS.acrCloudAccessKey}
             />
@@ -563,7 +573,7 @@ export default function SettingsScreen() {
               icon="lock"
               label="Secret Key"
               value={acrCloudSecret}
-              onChangeText={setAcrCloudSecret}
+              onChangeText={(text) => updateApiKey("acrCloudSecret", text)}
               placeholder="Enter ACRCloud secret key"
               tooltip={API_TOOLTIPS.acrCloudSecret}
             />
@@ -574,7 +584,7 @@ export default function SettingsScreen() {
               icon="key"
               label="API Key"
               value={acoustIdKey}
-              onChangeText={setAcoustIdKey}
+              onChangeText={(text) => updateApiKey("acoustIdKey", text)}
               placeholder="Enter AcoustID API key"
               tooltip={API_TOOLTIPS.acoustId}
             />
@@ -591,7 +601,7 @@ export default function SettingsScreen() {
           <ProviderSelector
             providers={STEM_PROVIDERS}
             selectedId={stemProvider}
-            onSelect={(id) => setStemProvider(id as StemProvider)}
+            onSelect={(id) => updateProviderSettings({ stemProvider: id as StemProvider })}
           />
         </SettingsSection>
       </View>
@@ -605,7 +615,7 @@ export default function SettingsScreen() {
           <ProviderSelector
             providers={MIDI_PROVIDERS}
             selectedId={midiProvider}
-            onSelect={(id) => setMidiProvider(id as MidiProvider)}
+            onSelect={(id) => updateProviderSettings({ midiProvider: id as MidiProvider })}
           />
         </SettingsSection>
       </View>
@@ -620,7 +630,7 @@ export default function SettingsScreen() {
               icon="key"
               label="LALAL.AI API Key"
               value={lalalaiKey}
-              onChangeText={setLalalaiKey}
+              onChangeText={(text) => updateApiKey("lalalaiKey", text)}
               placeholder="Enter LALAL.AI API key"
               tooltip={API_TOOLTIPS.lalalai}
             />
@@ -630,7 +640,7 @@ export default function SettingsScreen() {
               icon="key"
               label="Gaudio Studio API Key"
               value={gaudioKey}
-              onChangeText={setGaudioKey}
+              onChangeText={(text) => updateApiKey("gaudioKey", text)}
               placeholder="Enter Gaudio API key"
               tooltip={API_TOOLTIPS.gaudio}
             />
@@ -640,7 +650,7 @@ export default function SettingsScreen() {
               icon="key"
               label="Fadr API Token"
               value={fadrToken}
-              onChangeText={setFadrToken}
+              onChangeText={(text) => updateApiKey("fadrToken", text)}
               placeholder="Enter Fadr bearer token"
               tooltip={API_TOOLTIPS.fadr}
             />
@@ -650,7 +660,7 @@ export default function SettingsScreen() {
               icon="key"
               label="Moises API Key"
               value={moisesKey}
-              onChangeText={setMoisesKey}
+              onChangeText={(text) => updateApiKey("moisesKey", text)}
               placeholder="Enter Moises API key"
               tooltip={API_TOOLTIPS.moises}
             />
@@ -660,7 +670,7 @@ export default function SettingsScreen() {
               icon="key"
               label="AudioShake / LANDR API"
               value={audioshakeKey}
-              onChangeText={setAudioshakeKey}
+              onChangeText={(text) => updateApiKey("audioshakeKey", text)}
               placeholder="Enter AudioShake credentials"
               tooltip={API_TOOLTIPS.audioshake}
             />
@@ -670,7 +680,7 @@ export default function SettingsScreen() {
               icon="key"
               label="AudioStrip API Key"
               value={audiostripKey}
-              onChangeText={setAudiostripKey}
+              onChangeText={(text) => updateApiKey("audiostripKey", text)}
               placeholder="Enter AudioStrip API key"
               tooltip={API_TOOLTIPS.audiostrip}
             />
@@ -771,6 +781,16 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   container: {
     gap: Spacing.lg,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    gap: Spacing.md,
+    backgroundColor: Colors.dark.backgroundDefault,
+  },
+  loadingText: {
+    color: Colors.dark.textSecondary,
   },
   headerInfo: {
     flexDirection: "row",

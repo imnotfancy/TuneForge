@@ -1,10 +1,9 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { StyleSheet, View, Alert, Platform, Pressable } from "react-native";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { Audio } from "expo-av";
 
 import { ThemedText } from "@/components/ThemedText";
 import { ScreenScrollView } from "@/components/ScreenScrollView";
@@ -12,6 +11,7 @@ import { ProgressBar } from "@/components/ProgressBar";
 import { StemCard } from "@/components/StemCard";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList, StemData } from "@/navigation/RootStackNavigator";
+import { useMultiTrackPlayer } from "@/hooks/useAudioPlayer";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, "RemixProcessing">;
 type RouteType = RouteProp<RootStackParamList, "RemixProcessing">;
@@ -35,18 +35,21 @@ export default function RemixProcessingScreen() {
   const [status, setStatus] = useState("Uploading track...");
   const [isComplete, setIsComplete] = useState(false);
   const [stems, setStems] = useState<StemData[]>([]);
-  const [playingId, setPlayingId] = useState<string | null>(null);
-  const [mutedIds, setMutedIds] = useState<Set<string>>(new Set());
-  const [soloId, setSoloId] = useState<string | null>(null);
 
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const { 
+    togglePlay, 
+    toggleMute, 
+    toggleSolo, 
+    stopAll,
+    isTrackPlaying, 
+    isTrackMuted, 
+    isTrackSolo 
+  } = useMultiTrackPlayer();
 
   useEffect(() => {
     simulateProcessing();
     return () => {
-      if (soundRef.current) {
-        soundRef.current.unloadAsync();
-      }
+      stopAll();
     };
   }, []);
 
@@ -103,34 +106,19 @@ export default function RemixProcessingScreen() {
     });
   };
 
-  const handlePlayPress = async (stemId: string) => {
-    if (playingId === stemId) {
-      setPlayingId(null);
-      if (Platform.OS !== "web") {
-        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      }
-    } else {
-      setPlayingId(stemId);
-      if (Platform.OS !== "web") {
-        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      }
+  const handlePlayPress = async (stemId: string, stemUrl?: string) => {
+    if (Platform.OS !== "web") {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
+    await togglePlay(stemId, stemUrl);
   };
 
   const handleMutePress = (stemId: string) => {
-    setMutedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(stemId)) {
-        next.delete(stemId);
-      } else {
-        next.add(stemId);
-      }
-      return next;
-    });
+    toggleMute(stemId);
   };
 
   const handleSoloPress = (stemId: string) => {
-    setSoloId((prev) => (prev === stemId ? null : stemId));
+    toggleSolo(stemId);
   };
 
   const handleCancel = () => {
@@ -168,8 +156,9 @@ export default function RemixProcessingScreen() {
         <View style={styles.stemsList}>
           {STEM_TYPES.map((type, index) => {
             const stem = stems.find((s) => s.type === type);
-            const isLoading = !isComplete;
-            const stemProgress = isLoading
+            const stemId = stem?.id ?? type;
+            const isLoadingStems = !isComplete;
+            const stemProgress = isLoadingStems
               ? Math.min(100, Math.max(0, (progress - index * 15) * 2))
               : 100;
 
@@ -177,15 +166,15 @@ export default function RemixProcessingScreen() {
               <StemCard
                 key={type}
                 type={type}
-                isPlaying={playingId === (stem?.id ?? type)}
-                isMuted={mutedIds.has(stem?.id ?? type)}
-                isSolo={soloId === (stem?.id ?? type)}
+                isPlaying={isTrackPlaying(stemId)}
+                isMuted={isTrackMuted(stemId)}
+                isSolo={isTrackSolo(stemId)}
                 hasMidi={stem?.hasMidi ?? (type !== "drums" && type !== "instrumental")}
-                isLoading={isLoading}
+                isLoading={isLoadingStems}
                 progress={stemProgress}
-                onPlayPress={() => handlePlayPress(stem?.id ?? type)}
-                onMutePress={() => handleMutePress(stem?.id ?? type)}
-                onSoloPress={() => handleSoloPress(stem?.id ?? type)}
+                onPlayPress={() => handlePlayPress(stemId, stem?.url)}
+                onMutePress={() => handleMutePress(stemId)}
+                onSoloPress={() => handleSoloPress(stemId)}
               />
             );
           })}

@@ -8,20 +8,23 @@ import { StatusBar } from "expo-status-bar";
 
 import RootStackNavigator from "@/navigation/RootStackNavigator";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { SettingsProvider } from "@/hooks/useSettings";
 
 export default function App() {
   return (
     <ErrorBoundary>
-      <SafeAreaProvider>
-        <GestureHandlerRootView style={styles.root}>
-          <KeyboardProvider>
-            <NavigationContainer>
-              <RootStackNavigator />
-            </NavigationContainer>
-            <StatusBar style="light" />
-          </KeyboardProvider>
-        </GestureHandlerRootView>
-      </SafeAreaProvider>
+      <SettingsProvider>
+        <SafeAreaProvider>
+          <GestureHandlerRootView style={styles.root}>
+            <KeyboardProvider>
+              <NavigationContainer>
+                <RootStackNavigator />
+              </NavigationContainer>
+              <StatusBar style="light" />
+            </KeyboardProvider>
+          </GestureHandlerRootView>
+        </SafeAreaProvider>
+      </SettingsProvider>
     </ErrorBoundary>
   );
 }
