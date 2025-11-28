@@ -191,8 +191,8 @@ Example response format:
 
 router.post('/humming', async (req: Request, res: Response) => {
   try {
-    const accessKey = process.env.ACRCLOUD_ACCESS_KEY;
-    const accessSecret = process.env.ACRCLOUD_ACCESS_SECRET;
+    const accessKey = process.env.ACRCLOUD_ACCESS_KEY || process.env.ARCLOUD_ACCESS_KEY;
+    const accessSecret = process.env.ACRCLOUD_ACCESS_SECRET || process.env.ARCLOUD_ACCESS_SECRET;
     const host = process.env.ACRCLOUD_HOST || 'identify-eu-west-1.acrcloud.com';
     
     if (!accessKey || !accessSecret) {

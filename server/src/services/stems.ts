@@ -205,10 +205,18 @@ export class StemSeparationManager {
   private providers: StemProvider[] = [];
   
   constructor() {
-    this.providers = [
-      new LalalAIProvider(),
-      new FadrProvider(),
-    ];
+    const lalalProvider = new LalalAIProvider();
+    const fadrProvider = new FadrProvider();
+    
+    if (process.env.LALAL_API_KEY) {
+      lalalProvider.configure(process.env.LALAL_API_KEY);
+    }
+    
+    if (process.env.FADR_API_KEY) {
+      fadrProvider.configure(process.env.FADR_API_KEY);
+    }
+    
+    this.providers = [lalalProvider, fadrProvider];
   }
   
   configureProvider(name: string, apiKey: string): void {
