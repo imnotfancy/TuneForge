@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import axios from 'axios';
 import FormData from 'form-data';
 import fs from 'fs';
+import path from 'path';
 import * as songstats from '../services/songstats.js';
 import * as itunes from '../services/itunes.js';
 
@@ -206,6 +207,17 @@ router.post('/humming', async (req: Request, res: Response) => {
     
     const { audioPath, audioBuffer } = req.body;
     
+    // Define the root directory for audio files
+    const AUDIO_ROOT = path.resolve(process.cwd(), 'uploads');
+
+    if (audioPath) {
+      // Normalize and validate audioPath relative to the root
+      const resolvedPath = path.resolve(AUDIO_ROOT, audioPath);
+      if (!resolvedPath.startsWith(AUDIO_ROOT + path.sep)) {
+        return res.status(400).json({ error: 'Invalid audioPath' });
+      }
+    }
+
     if (!audioPath && !audioBuffer) {
       return res.status(400).json({ error: 'No audio provided' });
     }
@@ -228,8 +240,13 @@ router.post('/humming', async (req: Request, res: Response) => {
 
     const formData = new FormData();
     
-    if (audioPath && fs.existsSync(audioPath)) {
-      formData.append('sample', fs.createReadStream(audioPath));
+    if (audioPath) {
+      const resolvedPath = path.resolve(AUDIO_ROOT, audioPath);
+      if (fs.existsSync(resolvedPath)) {
+        formData.append('sample', fs.createReadStream(resolvedPath));
+      } else {
+        return res.status(400).json({ error: 'audioPath does not exist' });
+      }
     } else if (audioBuffer) {
       const buffer = Buffer.from(audioBuffer, 'base64');
       formData.append('sample', buffer, { filename: 'audio.wav' });
