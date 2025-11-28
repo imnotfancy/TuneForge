@@ -166,12 +166,21 @@ interface UseMultiTrackPlayerReturn {
 
 export function useMultiTrackPlayer(): UseMultiTrackPlayerReturn {
   const soundsRef = useRef<Map<string, Audio.Sound>>(new Map());
-  const [state, setState] = useState<MultiTrackPlayerState>({
+  const stateRef = useRef<MultiTrackPlayerState>({
     playingTracks: new Set(),
     mutedTracks: new Set(),
     soloTrack: null,
     isLoading: new Set(),
   });
+  const [state, setState] = useState<MultiTrackPlayerState>(stateRef.current);
+
+  const updateState = useCallback((updater: (prev: MultiTrackPlayerState) => MultiTrackPlayerState) => {
+    setState(prev => {
+      const next = updater(prev);
+      stateRef.current = next;
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -180,28 +189,51 @@ export function useMultiTrackPlayer(): UseMultiTrackPlayerReturn {
     };
   }, []);
 
-  const togglePlay = useCallback(async (trackId: string, uri?: string) => {
-    const existingSound = soundsRef.current.get(trackId);
-    
-    if (state.playingTracks.has(trackId)) {
-      if (existingSound) {
-        await existingSound.pauseAsync();
-      }
-      setState(prev => {
-        const next = new Set(prev.playingTracks);
-        next.delete(trackId);
-        return { ...prev, playingTracks: next };
-      });
-    } else {
-      if (existingSound) {
-        await existingSound.playAsync();
-        setState(prev => {
+  const createStatusListener = useCallback((trackId: string) => {
+    return (status: AVPlaybackStatus) => {
+      if (!status.isLoaded) return;
+      
+      if (status.didJustFinish || !status.isPlaying) {
+        updateState(prev => {
+          const next = new Set(prev.playingTracks);
+          if (status.didJustFinish || !status.isPlaying) {
+            next.delete(trackId);
+          }
+          return { ...prev, playingTracks: next };
+        });
+      } else if (status.isPlaying) {
+        updateState(prev => {
           const next = new Set(prev.playingTracks);
           next.add(trackId);
           return { ...prev, playingTracks: next };
         });
+      }
+    };
+  }, [updateState]);
+
+  const applyMuteState = useCallback((sound: Audio.Sound, trackId: string) => {
+    const currentState = stateRef.current;
+    if (currentState.soloTrack !== null) {
+      sound.setIsMutedAsync(trackId !== currentState.soloTrack);
+    } else {
+      sound.setIsMutedAsync(currentState.mutedTracks.has(trackId));
+    }
+  }, []);
+
+  const togglePlay = useCallback(async (trackId: string, uri?: string) => {
+    const existingSound = soundsRef.current.get(trackId);
+    const currentlyPlaying = stateRef.current.playingTracks.has(trackId);
+    
+    if (currentlyPlaying) {
+      if (existingSound) {
+        await existingSound.pauseAsync();
+      }
+    } else {
+      if (existingSound) {
+        await existingSound.setPositionAsync(0);
+        await existingSound.playAsync();
       } else if (uri) {
-        setState(prev => {
+        updateState(prev => {
           const next = new Set(prev.isLoading);
           next.add(trackId);
           return { ...prev, isLoading: next };
@@ -216,11 +248,14 @@ export function useMultiTrackPlayer(): UseMultiTrackPlayerReturn {
           
           const { sound } = await Audio.Sound.createAsync(
             { uri },
-            { shouldPlay: true }
+            { shouldPlay: true },
+            createStatusListener(trackId)
           );
           soundsRef.current.set(trackId, sound);
           
-          setState(prev => {
+          applyMuteState(sound, trackId);
+          
+          updateState(prev => {
             const playing = new Set(prev.playingTracks);
             playing.add(trackId);
             const loading = new Set(prev.isLoading);
@@ -229,7 +264,7 @@ export function useMultiTrackPlayer(): UseMultiTrackPlayerReturn {
           });
         } catch (error) {
           console.error("Failed to load audio:", error);
-          setState(prev => {
+          updateState(prev => {
             const loading = new Set(prev.isLoading);
             loading.delete(trackId);
             return { ...prev, isLoading: loading };
@@ -237,47 +272,52 @@ export function useMultiTrackPlayer(): UseMultiTrackPlayerReturn {
         }
       }
     }
-  }, [state.playingTracks]);
+  }, [createStatusListener, applyMuteState, updateState]);
 
   const toggleMute = useCallback((trackId: string) => {
-    setState(prev => {
+    const currentlyMuted = stateRef.current.mutedTracks.has(trackId);
+    const newMutedState = !currentlyMuted;
+    
+    updateState(prev => {
       const next = new Set(prev.mutedTracks);
-      if (next.has(trackId)) {
-        next.delete(trackId);
-      } else {
+      if (newMutedState) {
         next.add(trackId);
+      } else {
+        next.delete(trackId);
       }
       return { ...prev, mutedTracks: next };
     });
     
     const sound = soundsRef.current.get(trackId);
-    if (sound) {
-      sound.setIsMutedAsync(state.mutedTracks.has(trackId) ? false : true);
+    if (sound && stateRef.current.soloTrack === null) {
+      sound.setIsMutedAsync(newMutedState);
     }
-  }, [state.mutedTracks]);
+  }, [updateState]);
 
   const toggleSolo = useCallback((trackId: string) => {
-    setState(prev => ({
+    const currentSolo = stateRef.current.soloTrack;
+    const newSoloTrack = currentSolo === trackId ? null : trackId;
+    
+    updateState(prev => ({
       ...prev,
-      soloTrack: prev.soloTrack === trackId ? null : trackId,
+      soloTrack: newSoloTrack,
     }));
     
-    const newSoloTrack = state.soloTrack === trackId ? null : trackId;
     soundsRef.current.forEach((sound, id) => {
       if (newSoloTrack === null) {
-        sound.setIsMutedAsync(state.mutedTracks.has(id));
+        sound.setIsMutedAsync(stateRef.current.mutedTracks.has(id));
       } else {
         sound.setIsMutedAsync(id !== newSoloTrack);
       }
     });
-  }, [state.soloTrack, state.mutedTracks]);
+  }, [updateState]);
 
   const stopAll = useCallback(async () => {
     await Promise.all(
       Array.from(soundsRef.current.values()).map(sound => sound.stopAsync())
     );
-    setState(prev => ({ ...prev, playingTracks: new Set() }));
-  }, []);
+    updateState(prev => ({ ...prev, playingTracks: new Set() }));
+  }, [updateState]);
 
   const isTrackPlaying = useCallback((trackId: string) => 
     state.playingTracks.has(trackId), [state.playingTracks]);
