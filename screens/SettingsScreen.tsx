@@ -15,6 +15,83 @@ import {
 } from "@/components/SettingsSection";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 
+type RecognitionProvider = "acrcloud" | "acoustid";
+type StemProvider = "fadr" | "lalalai" | "none";
+type MidiProvider = "fadr" | "basicpitch" | "none";
+
+interface ProviderInfo {
+  id: string;
+  name: string;
+  description: string;
+  pricing: string;
+  icon: keyof typeof Feather.glyphMap;
+}
+
+const RECOGNITION_PROVIDERS: ProviderInfo[] = [
+  {
+    id: "acrcloud",
+    name: "ACRCloud",
+    description: "Industry-leading accuracy with extensive music database",
+    pricing: "Free tier: 1,000 requests/day",
+    icon: "zap",
+  },
+  {
+    id: "acoustid",
+    name: "AcoustID",
+    description: "Open-source fingerprinting with MusicBrainz database",
+    pricing: "Free and open-source",
+    icon: "database",
+  },
+];
+
+const STEM_PROVIDERS: ProviderInfo[] = [
+  {
+    id: "fadr",
+    name: "Fadr",
+    description: "High-quality AI stem separation with MIDI support",
+    pricing: "$10/month for API access",
+    icon: "layers",
+  },
+  {
+    id: "lalalai",
+    name: "LALAL.AI",
+    description: "Neural network powered vocal and instrumental separation",
+    pricing: "Pay-per-minute pricing",
+    icon: "cpu",
+  },
+  {
+    id: "none",
+    name: "Skip Stem Separation",
+    description: "Use TuneForge for recognition only",
+    pricing: "No additional cost",
+    icon: "skip-forward",
+  },
+];
+
+const MIDI_PROVIDERS: ProviderInfo[] = [
+  {
+    id: "fadr",
+    name: "Fadr",
+    description: "Extract melodies, chords, and beats to MIDI",
+    pricing: "Included with Fadr subscription",
+    icon: "music",
+  },
+  {
+    id: "basicpitch",
+    name: "Basic Pitch",
+    description: "Spotify's open-source audio-to-MIDI converter",
+    pricing: "Free and open-source",
+    icon: "git-branch",
+  },
+  {
+    id: "none",
+    name: "Skip MIDI Generation",
+    description: "Export audio stems only",
+    pricing: "No additional cost",
+    icon: "skip-forward",
+  },
+];
+
 const API_TOOLTIPS = {
   acrCloudAccessKey: {
     title: "ACRCloud Access Key",
@@ -68,21 +145,153 @@ const API_TOOLTIPS = {
     urlLabel: "Visit Fadr",
     note: "Fadr Plus subscription required. Supports stem separation, MIDI generation, key/tempo detection.",
   },
+  lalalai: {
+    title: "LALAL.AI API Key",
+    steps: [
+      "Go to lalal.ai and create an account",
+      "Navigate to Account Settings",
+      "Find the 'API' section and generate your key",
+      "Purchase credits for API usage",
+      "Copy your API key and paste it here",
+    ],
+    url: "https://www.lalal.ai/",
+    urlLabel: "Visit LALAL.AI",
+    note: "Pay-as-you-go pricing based on audio minutes processed.",
+  },
+  basicpitch: {
+    title: "Basic Pitch",
+    steps: [
+      "Basic Pitch runs locally - no API key needed!",
+      "It's Spotify's open-source audio-to-MIDI model",
+      "Processing happens on-device for privacy",
+    ],
+    url: "https://github.com/spotify/basic-pitch",
+    urlLabel: "View on GitHub",
+    note: "Free to use with no rate limits. May be slower on older devices.",
+  },
 };
+
+function ProviderSelector({
+  providers,
+  selectedId,
+  onSelect,
+  disabled,
+}: {
+  providers: ProviderInfo[];
+  selectedId: string;
+  onSelect: (id: string) => void;
+  disabled?: boolean;
+}) {
+  const handlePress = async (id: string) => {
+    if (disabled) return;
+    if (Platform.OS !== "web") {
+      await Haptics.selectionAsync();
+    }
+    onSelect(id);
+  };
+
+  return (
+    <View style={styles.providerList}>
+      {providers.map((provider) => {
+        const isSelected = provider.id === selectedId;
+        return (
+          <Pressable
+            key={provider.id}
+            style={[
+              styles.providerCard,
+              isSelected && styles.providerCardSelected,
+              disabled && styles.providerCardDisabled,
+            ]}
+            onPress={() => handlePress(provider.id)}
+          >
+            <View style={styles.providerHeader}>
+              <View
+                style={[
+                  styles.providerIconContainer,
+                  isSelected && styles.providerIconSelected,
+                ]}
+              >
+                <Feather
+                  name={provider.icon}
+                  size={18}
+                  color={isSelected ? Colors.dark.accent : Colors.dark.textSecondary}
+                />
+              </View>
+              <View style={styles.providerInfo}>
+                <ThemedText type="body" style={styles.providerName}>
+                  {provider.name}
+                </ThemedText>
+                <ThemedText type="caption" style={styles.providerPricing}>
+                  {provider.pricing}
+                </ThemedText>
+              </View>
+              <View
+                style={[
+                  styles.radioOuter,
+                  isSelected && styles.radioOuterSelected,
+                ]}
+              >
+                {isSelected ? <View style={styles.radioInner} /> : null}
+              </View>
+            </View>
+            <ThemedText type="caption" style={styles.providerDescription}>
+              {provider.description}
+            </ThemedText>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+function LevelBadge({ level, required }: { level: number; required: boolean }) {
+  return (
+    <View style={styles.levelBadgeContainer}>
+      <View style={[styles.levelBadge, required && styles.levelBadgeRequired]}>
+        <ThemedText type="caption" style={styles.levelBadgeText}>
+          Level {level}
+        </ThemedText>
+      </View>
+      {required ? (
+        <View style={styles.requiredBadge}>
+          <ThemedText type="caption" style={styles.requiredText}>
+            Required
+          </ThemedText>
+        </View>
+      ) : (
+        <View style={styles.optionalBadge}>
+          <ThemedText type="caption" style={styles.optionalText}>
+            Optional
+          </ThemedText>
+        </View>
+      )}
+    </View>
+  );
+}
 
 export default function SettingsScreen() {
   const navigation = useNavigation();
+
+  const [recognitionProvider, setRecognitionProvider] =
+    useState<RecognitionProvider>("acrcloud");
+  const [stemProvider, setStemProvider] = useState<StemProvider>("fadr");
+  const [midiProvider, setMidiProvider] = useState<MidiProvider>("fadr");
 
   const [acrCloudKey, setAcrCloudKey] = useState("");
   const [acrCloudSecret, setAcrCloudSecret] = useState("");
   const [acoustIdKey, setAcoustIdKey] = useState("");
   const [fadrToken, setFadrToken] = useState("");
+  const [lalalaiKey, setLalalaiKey] = useState("");
   const [recordingQuality, setRecordingQuality] = useState("High");
 
   const appVersion = Constants.expoConfig?.version ?? "1.0.0";
 
+  const needsFadrToken = stemProvider === "fadr" || midiProvider === "fadr";
+  const needsLalalaiKey = stemProvider === "lalalai";
+
   const handleClearCache = (type: "recognition" | "stems") => {
-    const title = type === "recognition" ? "Recognition Cache" : "Processed Stems";
+    const title =
+      type === "recognition" ? "Recognition Cache" : "Processed Stems";
 
     Alert.alert(
       `Clear ${title}`,
@@ -94,7 +303,9 @@ export default function SettingsScreen() {
           style: "destructive",
           onPress: async () => {
             if (Platform.OS !== "web") {
-              await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              await Haptics.notificationAsync(
+                Haptics.NotificationFeedbackType.Success
+              );
             }
             Alert.alert("Cleared", `${title} has been cleared.`);
           },
@@ -117,7 +328,10 @@ export default function SettingsScreen() {
       "Higher quality produces better recognition results but uses more storage.",
       [
         { text: "Low (64kbps)", onPress: () => setRecordingQuality("Low") },
-        { text: "Medium (128kbps)", onPress: () => setRecordingQuality("Medium") },
+        {
+          text: "Medium (128kbps)",
+          onPress: () => setRecordingQuality("Medium"),
+        },
         { text: "High (256kbps)", onPress: () => setRecordingQuality("High") },
         { text: "Cancel", style: "cancel" },
       ]
@@ -132,47 +346,114 @@ export default function SettingsScreen() {
     <ScreenScrollView contentContainerStyle={styles.container}>
       <View style={styles.headerInfo}>
         <View style={styles.headerIconContainer}>
-          <Feather name="key" size={24} color={Colors.dark.accent} />
+          <Feather name="settings" size={24} color={Colors.dark.accent} />
         </View>
         <ThemedText type="body" style={styles.headerText}>
-          Tap the help icon next to each field for step-by-step setup instructions.
+          Configure your preferred providers for each feature. Only Level 1 is
+          required to use TuneForge.
         </ThemedText>
       </View>
 
-      <SettingsSection title="API Configuration">
-        <SecureInputRow
-          icon="key"
-          label="ACRCloud Access Key"
-          value={acrCloudKey}
-          onChangeText={setAcrCloudKey}
-          placeholder="Enter access key"
-          tooltip={API_TOOLTIPS.acrCloudAccessKey}
-        />
-        <SecureInputRow
-          icon="lock"
-          label="ACRCloud Secret"
-          value={acrCloudSecret}
-          onChangeText={setAcrCloudSecret}
-          placeholder="Enter secret key"
-          tooltip={API_TOOLTIPS.acrCloudSecret}
-        />
-        <SecureInputRow
-          icon="key"
-          label="AcoustID API Key"
-          value={acoustIdKey}
-          onChangeText={setAcoustIdKey}
-          placeholder="Enter API key"
-          tooltip={API_TOOLTIPS.acoustId}
-        />
-        <SecureInputRow
-          icon="key"
-          label="Fadr API Token"
-          value={fadrToken}
-          onChangeText={setFadrToken}
-          placeholder="Enter bearer token"
-          tooltip={API_TOOLTIPS.fadr}
-        />
-      </SettingsSection>
+      <View style={styles.levelSection}>
+        <LevelBadge level={1} required />
+        <SettingsSection title="Music Recognition">
+          <ThemedText type="caption" style={styles.sectionHint}>
+            Choose your music identification service. This is required to
+            identify songs.
+          </ThemedText>
+          <ProviderSelector
+            providers={RECOGNITION_PROVIDERS}
+            selectedId={recognitionProvider}
+            onSelect={(id) => setRecognitionProvider(id as RecognitionProvider)}
+          />
+        </SettingsSection>
+
+        {recognitionProvider === "acrcloud" ? (
+          <SettingsSection title="ACRCloud Configuration">
+            <SecureInputRow
+              icon="key"
+              label="Access Key"
+              value={acrCloudKey}
+              onChangeText={setAcrCloudKey}
+              placeholder="Enter ACRCloud access key"
+              tooltip={API_TOOLTIPS.acrCloudAccessKey}
+            />
+            <SecureInputRow
+              icon="lock"
+              label="Secret Key"
+              value={acrCloudSecret}
+              onChangeText={setAcrCloudSecret}
+              placeholder="Enter ACRCloud secret key"
+              tooltip={API_TOOLTIPS.acrCloudSecret}
+            />
+          </SettingsSection>
+        ) : (
+          <SettingsSection title="AcoustID Configuration">
+            <SecureInputRow
+              icon="key"
+              label="API Key"
+              value={acoustIdKey}
+              onChangeText={setAcoustIdKey}
+              placeholder="Enter AcoustID API key"
+              tooltip={API_TOOLTIPS.acoustId}
+            />
+          </SettingsSection>
+        )}
+      </View>
+
+      <View style={styles.levelSection}>
+        <LevelBadge level={2} required={false} />
+        <SettingsSection title="Stem Separation">
+          <ThemedText type="caption" style={styles.sectionHint}>
+            Extract vocals, drums, bass, and other instruments from your audio.
+          </ThemedText>
+          <ProviderSelector
+            providers={STEM_PROVIDERS}
+            selectedId={stemProvider}
+            onSelect={(id) => setStemProvider(id as StemProvider)}
+          />
+        </SettingsSection>
+      </View>
+
+      <View style={styles.levelSection}>
+        <LevelBadge level={3} required={false} />
+        <SettingsSection title="MIDI Generation">
+          <ThemedText type="caption" style={styles.sectionHint}>
+            Convert audio to MIDI for use in your DAW or music production
+            software.
+          </ThemedText>
+          <ProviderSelector
+            providers={MIDI_PROVIDERS}
+            selectedId={midiProvider}
+            onSelect={(id) => setMidiProvider(id as MidiProvider)}
+          />
+        </SettingsSection>
+      </View>
+
+      {(needsFadrToken || needsLalalaiKey) && (
+        <SettingsSection title="Provider API Keys">
+          {needsFadrToken ? (
+            <SecureInputRow
+              icon="key"
+              label="Fadr API Token"
+              value={fadrToken}
+              onChangeText={setFadrToken}
+              placeholder="Enter Fadr bearer token"
+              tooltip={API_TOOLTIPS.fadr}
+            />
+          ) : null}
+          {needsLalalaiKey ? (
+            <SecureInputRow
+              icon="key"
+              label="LALAL.AI API Key"
+              value={lalalaiKey}
+              onChangeText={setLalalaiKey}
+              placeholder="Enter LALAL.AI API key"
+              tooltip={API_TOOLTIPS.lalalai}
+            />
+          ) : null}
+        </SettingsSection>
+      )}
 
       <SettingsSection title="Audio Settings">
         <SettingsRow
@@ -187,16 +468,24 @@ export default function SettingsScreen() {
             <ThemedText type="body">Supported Formats</ThemedText>
             <View style={styles.formatBadges}>
               <View style={styles.formatBadge}>
-                <ThemedText type="caption" style={styles.formatText}>MP3</ThemedText>
+                <ThemedText type="caption" style={styles.formatText}>
+                  MP3
+                </ThemedText>
               </View>
               <View style={styles.formatBadge}>
-                <ThemedText type="caption" style={styles.formatText}>WAV</ThemedText>
+                <ThemedText type="caption" style={styles.formatText}>
+                  WAV
+                </ThemedText>
               </View>
               <View style={styles.formatBadge}>
-                <ThemedText type="caption" style={styles.formatText}>FLAC</ThemedText>
+                <ThemedText type="caption" style={styles.formatText}>
+                  FLAC
+                </ThemedText>
               </View>
               <View style={styles.formatBadge}>
-                <ThemedText type="caption" style={styles.formatText}>M4A</ThemedText>
+                <ThemedText type="caption" style={styles.formatText}>
+                  M4A
+                </ThemedText>
               </View>
             </View>
           </View>
@@ -279,6 +568,121 @@ const styles = StyleSheet.create({
   headerText: {
     flex: 1,
     color: Colors.dark.textSecondary,
+  },
+  levelSection: {
+    gap: Spacing.sm,
+  },
+  levelBadgeContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.sm,
+  },
+  levelBadge: {
+    backgroundColor: Colors.dark.backgroundSecondary,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.xs,
+  },
+  levelBadgeRequired: {
+    backgroundColor: Colors.dark.accent + "30",
+  },
+  levelBadgeText: {
+    color: Colors.dark.textPrimary,
+    fontWeight: "700",
+  },
+  requiredBadge: {
+    backgroundColor: Colors.dark.accent,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.xs,
+  },
+  requiredText: {
+    color: Colors.dark.textPrimary,
+    fontWeight: "600",
+  },
+  optionalBadge: {
+    backgroundColor: Colors.dark.backgroundSecondary,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.xs,
+    borderWidth: 1,
+    borderColor: Colors.dark.textSecondary + "40",
+  },
+  optionalText: {
+    color: Colors.dark.textSecondary,
+    fontWeight: "600",
+  },
+  sectionHint: {
+    color: Colors.dark.textSecondary,
+    paddingHorizontal: Spacing.md,
+    paddingBottom: Spacing.sm,
+  },
+  providerList: {
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.sm,
+  },
+  providerCard: {
+    backgroundColor: Colors.dark.backgroundDefault,
+    borderRadius: BorderRadius.sm,
+    padding: Spacing.md,
+    borderWidth: 2,
+    borderColor: "transparent",
+  },
+  providerCardSelected: {
+    borderColor: Colors.dark.accent,
+    backgroundColor: Colors.dark.accent + "10",
+  },
+  providerCardDisabled: {
+    opacity: 0.5,
+  },
+  providerHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    marginBottom: Spacing.xs,
+  },
+  providerIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.dark.backgroundSecondary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  providerIconSelected: {
+    backgroundColor: Colors.dark.accent + "30",
+  },
+  providerInfo: {
+    flex: 1,
+  },
+  providerName: {
+    fontWeight: "600",
+  },
+  providerPricing: {
+    color: Colors.dark.accent,
+  },
+  providerDescription: {
+    color: Colors.dark.textSecondary,
+    marginTop: Spacing.xs,
+  },
+  radioOuter: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: Colors.dark.textSecondary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  radioOuterSelected: {
+    borderColor: Colors.dark.accent,
+  },
+  radioInner: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: Colors.dark.accent,
   },
   supportedFormatsRow: {
     flexDirection: "row",
