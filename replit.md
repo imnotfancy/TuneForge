@@ -1,12 +1,12 @@
 # TuneForge - AI Music Analyzer & Remixer
 
 ## Overview
-TuneForge is a mobile app that allows users to record or upload audio clips for music recognition, metadata enrichment, and creative stem separation/remixing. The app uses ACRCloud (primary) and AcoustID (fallback) for music identification, and Fadr API for stem separation and MIDI generation.
+TuneForge is a mobile app that allows users to record or upload audio clips for music recognition, metadata enrichment, and creative stem separation/remixing. Features a modular provider system allowing users to mix-and-match their preferred services for recognition, stem separation, and MIDI generation.
 
 ## Current State
 - **Phase**: Frontend Prototype (Design-First)
 - **Stack**: Expo React Native (SDK 54)
-- **Status**: UI prototype complete with mock data flow
+- **Status**: UI prototype complete with leveled provider configuration
 
 ## Project Architecture
 
@@ -77,22 +77,31 @@ TuneForge is a mobile app that allows users to record or upload audio clips for 
   - useScreenInsets.ts
 ```
 
-## API Integration (Planned for Backend Phase)
+## Provider Configuration (Leveled System)
 
-### ACRCloud (Primary Recognition)
-- Endpoint: POST `/v1/identify`
-- Auth: API Key + Access Key with HMAC-SHA1 signing
-- Free tier: 1,000 queries/day
+### Level 1 - Music Recognition (Required)
+| Provider | Description | Pricing |
+|----------|-------------|---------|
+| ACRCloud | Industry-leading accuracy, extensive database | Free: 1,000/day |
+| AcoustID | Open-source, MusicBrainz database | Free |
 
-### AcoustID (Fallback Recognition)
-- Endpoint: POST `/v2/lookup`
-- Auth: API Key
-- Free: Unlimited non-commercial use
+### Level 2 - Stem Separation (Optional)
+| Provider | Description | Pricing | Requires API |
+|----------|-------------|---------|--------------|
+| LALAL.AI | Perseus neural network, best vocals | From $10/month | Yes |
+| Gaudio Studio | GSEP model, token-based | From $5 | Yes |
+| Fadr | Full suite with MIDI, plugins | $10/month | Yes |
+| Moises | Great for live instruments | From $4/month | Yes |
+| AudioShake (LANDR) | Major label AI | From $20/year | Yes |
+| AudioStrip | Web-based, simple | Free tier | Yes |
+| UVR5 | Open-source, local processing | Free | No |
 
-### Fadr API (Stem Separation)
-- Upload → Create Asset → Create Task → Poll Status → Download
-- Auth: Bearer Token (Fadr Plus subscription required)
-- Outputs: 5 stems + MIDI files + key/tempo detection
+### Level 3 - MIDI Generation (Optional)
+| Provider | Description | Pricing | Requires API |
+|----------|-------------|---------|--------------|
+| Fadr | Melodies, chords, drums to MIDI | With subscription | Yes |
+| Basic Pitch | Spotify open-source | Free | No |
+| Hit'n'Mix RipX | Deep audio editing | $99+ one-time | No |
 
 ## User Preferences
 - Dark mode only (music production aesthetic)
@@ -101,10 +110,14 @@ TuneForge is a mobile app that allows users to record or upload audio clips for 
 - Haptic feedback on key interactions
 
 ## Recent Changes
-- Initial frontend prototype created
-- All screens and components implemented
-- Mock data flow for testing
-- App icon and branding assets generated
+- Added leveled provider configuration system
+- Expanded stem separation options: LALAL.AI, Gaudio, Fadr, Moises, AudioShake, AudioStrip, UVR5
+- Added MIDI generation providers: Fadr, Basic Pitch, Hit'n'Mix RipX
+- Provider cards show tier badges (Top Pick, Pro, Free)
+- Local providers indicate "Runs locally - no API key needed"
+- Dynamic API key fields based on selected providers
+- Added FLAC and M4A format support
+- API setup tooltips with step-by-step instructions
 
 ## Next Steps (Backend Phase)
 1. Implement ACRCloud API integration
