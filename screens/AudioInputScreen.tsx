@@ -20,6 +20,20 @@ import { RootStackParamList, TrackMetadata } from "@/navigation/RootStackNavigat
 
 const MAX_RECORDING_SECONDS = 30;
 
+const SUPPORTED_AUDIO_TYPES = [
+  "audio/mpeg",
+  "audio/mp3",
+  "audio/wav",
+  "audio/x-wav",
+  "audio/flac",
+  "audio/x-flac",
+  "audio/m4a",
+  "audio/x-m4a",
+  "audio/mp4",
+  "audio/aac",
+  "audio/*",
+];
+
 const mockMetadata: TrackMetadata = {
   title: "Blinding Lights",
   artist: "The Weeknd",
@@ -140,12 +154,29 @@ export default function AudioInputScreen() {
   const handleUpload = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: ["audio/*"],
+        type: SUPPORTED_AUDIO_TYPES,
         copyToCacheDirectory: true,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
+        
+        const fileName = asset.name?.toLowerCase() ?? "";
+        const isSupported = 
+          fileName.endsWith(".mp3") ||
+          fileName.endsWith(".wav") ||
+          fileName.endsWith(".flac") ||
+          fileName.endsWith(".m4a") ||
+          fileName.endsWith(".aac");
+
+        if (!isSupported && asset.mimeType && !asset.mimeType.startsWith("audio/")) {
+          Alert.alert(
+            "Unsupported Format",
+            "Please select an audio file (MP3, WAV, FLAC, or M4A)."
+          );
+          return;
+        }
+
         processAudio(asset.uri);
       }
     } catch (error) {
@@ -207,6 +238,12 @@ export default function AudioInputScreen() {
           </View>
 
           <UploadButton onPress={handleUpload} disabled={isRecording || isProcessing} />
+          
+          <View style={styles.formatInfo}>
+            <ThemedText type="caption" style={styles.formatText}>
+              Supports MP3, WAV, FLAC, M4A
+            </ThemedText>
+          </View>
         </View>
       </View>
 
@@ -246,7 +283,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   uploadSection: {
-    gap: Spacing.lg,
+    gap: Spacing.md,
   },
   divider: {
     flexDirection: "row",
@@ -260,5 +297,11 @@ const styles = StyleSheet.create({
   },
   dividerText: {
     color: Colors.dark.textSecondary,
+  },
+  formatInfo: {
+    alignItems: "center",
+  },
+  formatText: {
+    color: Colors.dark.textDisabled,
   },
 });
