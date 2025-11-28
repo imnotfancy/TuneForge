@@ -17,6 +17,7 @@ import { LoadingOverlay } from "@/components/LoadingOverlay";
 import { useScreenInsets } from "@/hooks/useScreenInsets";
 import { Colors, Spacing } from "@/constants/theme";
 import { RootStackParamList, TrackMetadata } from "@/navigation/RootStackNavigator";
+import tuneForgeAPI from "@/services/api";
 
 const MAX_RECORDING_SECONDS = 30;
 
@@ -34,18 +35,6 @@ const SUPPORTED_AUDIO_TYPES = [
   "audio/*",
 ];
 
-const mockMetadata: TrackMetadata = {
-  title: "Blinding Lights",
-  artist: "The Weeknd",
-  album: "After Hours",
-  albumArt: "https://i.scdn.co/image/ab67616d0000b2738863bc11d2aa12b54f5aeb36",
-  confidence: 94,
-  source: "acrcloud",
-  spotifyUrl: "https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b",
-  youtubeUrl: "https://www.youtube.com/watch?v=4NRXx6U8ABQ",
-  year: "2020",
-  genre: "Synth-pop",
-};
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, "AudioInput">;
 
@@ -188,14 +177,23 @@ export default function AudioInputScreen() {
   const processAudio = async (uri: string) => {
     setIsProcessing(true);
     
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    
-    setIsProcessing(false);
-    
-    navigation.navigate("RecognitionResults", {
-      audioUri: uri,
-      metadata: mockMetadata,
-    });
+    try {
+      const { id } = await tuneForgeAPI.uploadAudioAndCreateJob(uri);
+      
+      setIsProcessing(false);
+      
+      navigation.navigate("RecognitionResults", {
+        audioUri: uri,
+        jobId: id,
+      });
+    } catch (error) {
+      setIsProcessing(false);
+      console.error("Failed to process audio:", error);
+      Alert.alert(
+        "Processing Error",
+        "Failed to process audio. Please try again."
+      );
+    }
   };
 
   return (

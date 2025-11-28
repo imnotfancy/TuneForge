@@ -51,6 +51,34 @@ const createJobSchema = z.object({
   album: z.string().optional(),
 });
 
+router.get('/', async (req: Request, res: Response) => {
+  try {
+    const limit = parseInt(req.query.limit as string) || 20;
+    const allJobs = await db.query.jobs.findMany({
+      orderBy: (jobs, { desc }) => [desc(jobs.createdAt)],
+      limit,
+    });
+    
+    return res.json({
+      jobs: allJobs.map(job => ({
+        id: job.id,
+        status: job.status,
+        title: job.title,
+        artist: job.artist,
+        album: job.album,
+        albumArt: job.albumArt,
+        progress: job.progress,
+        progressMessage: job.progressMessage,
+        createdAt: job.createdAt,
+        updatedAt: job.updatedAt,
+      })),
+    });
+  } catch (error) {
+    console.error('Get jobs error:', error);
+    return res.status(500).json({ error: 'Failed to get jobs' });
+  }
+});
+
 router.post('/', async (req: Request, res: Response) => {
   try {
     const validation = createJobSchema.safeParse(req.body);
@@ -90,7 +118,7 @@ router.post('/', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/upload', upload.single('file'), async (req: Request, res: Response) => {
+router.post('/upload', upload.single('audio'), async (req: Request, res: Response) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });

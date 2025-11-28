@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { StyleSheet, View, Alert, Platform, Pressable } from "react-native";
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { StyleSheet, View, Alert, Platform, Pressable, ActivityIndicator } from "react-native";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
@@ -12,29 +12,43 @@ import { StemCard } from "@/components/StemCard";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList, StemData } from "@/navigation/RootStackNavigator";
 import { useMultiTrackPlayer } from "@/hooks/useAudioPlayer";
+import tuneForgeAPI, { JobStatus } from "@/services/api";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, "RemixProcessing">;
 type RouteType = RouteProp<RootStackParamList, "RemixProcessing">;
 
-const STEM_TYPES = ["vocals", "drums", "bass", "melodies", "instrumental"] as const;
+const STEM_TYPES = ["vocals", "drums", "bass", "melody", "instrumental"] as const;
 
-const mockStems: StemData[] = [
-  { id: "1", type: "vocals", url: "", hasMidi: true, midiUrl: "" },
-  { id: "2", type: "drums", url: "", hasMidi: false },
-  { id: "3", type: "bass", url: "", hasMidi: true, midiUrl: "" },
-  { id: "4", type: "melodies", url: "", hasMidi: true, midiUrl: "" },
-  { id: "5", type: "instrumental", url: "", hasMidi: false },
-];
+const STEM_DISPLAY_NAMES: Record<string, string> = {
+  vocals: "Vocals",
+  drums: "Drums",
+  bass: "Bass",
+  melody: "Melodies",
+  melodies: "Melodies",
+  instrumental: "Instrumental",
+};
+
+const STATUS_MESSAGES: Record<string, string> = {
+  pending: "Preparing to process...",
+  identifying: "Identifying track...",
+  acquiring: "Acquiring high-quality audio...",
+  separating: "Separating stems...",
+  generating_midi: "Generating MIDI files...",
+  completed: "Complete!",
+  failed: "Processing failed",
+};
 
 export default function RemixProcessingScreen() {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<RouteType>();
-  const { metadata } = route.params;
+  const { jobId, metadata } = route.params;
 
-  const [progress, setProgress] = useState(0);
-  const [status, setStatus] = useState("Uploading track...");
-  const [isComplete, setIsComplete] = useState(false);
-  const [stems, setStems] = useState<StemData[]>([]);
+  const [job, setJob] = useState<JobStatus | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
+  const isMountedRef = useRef(true);
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const { 
     togglePlay, 
@@ -46,14 +60,61 @@ export default function RemixProcessingScreen() {
     isTrackSolo 
   } = useMultiTrackPlayer();
 
-  useEffect(() => {
-    simulateProcessing();
-    return () => {
-      stopAll();
-    };
+  const clearPolling = useCallback(() => {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
   }, []);
 
+  const pollJobStatus = useCallback(async () => {
+    if (!isMountedRef.current) return;
+
+    try {
+      const status = await tuneForgeAPI.getJobStatus(jobId);
+      
+      if (!isMountedRef.current) return;
+      
+      setJob(status);
+      setIsLoading(false);
+      setRetryCount(0);
+
+      if (status.status === "completed" || status.status === "failed") {
+        clearPolling();
+        if (status.status === "completed" && Platform.OS !== "web") {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }
+      }
+    } catch (err) {
+      if (!isMountedRef.current) return;
+      
+      console.error("Failed to fetch job status:", err);
+      setRetryCount(prev => prev + 1);
+      
+      if (retryCount >= 3) {
+        clearPolling();
+        setError("Unable to connect to server. Please check your connection.");
+        setIsLoading(false);
+      }
+    }
+  }, [jobId, retryCount, clearPolling]);
+
   useEffect(() => {
+    isMountedRef.current = true;
+    
+    pollJobStatus();
+    
+    pollIntervalRef.current = setInterval(pollJobStatus, 2000);
+    
+    return () => {
+      isMountedRef.current = false;
+      clearPolling();
+      stopAll();
+    };
+  }, [pollJobStatus, clearPolling, stopAll]);
+
+  useEffect(() => {
+    const isComplete = job?.status === "completed";
     navigation.setOptions({
       headerRight: () => (
         <Pressable
@@ -72,36 +133,28 @@ export default function RemixProcessingScreen() {
         </Pressable>
       ),
     });
-  }, [isComplete, navigation]);
+  }, [job?.status, navigation]);
 
-  const simulateProcessing = async () => {
-    const stages = [
-      { progress: 10, status: "Uploading track...", duration: 500 },
-      { progress: 25, status: "Analyzing audio...", duration: 800 },
-      { progress: 40, status: "Separating stems...", duration: 1200 },
-      { progress: 60, status: "Processing vocals...", duration: 800 },
-      { progress: 75, status: "Generating MIDI...", duration: 1000 },
-      { progress: 90, status: "Finalizing...", duration: 600 },
-      { progress: 100, status: "Complete!", duration: 300 },
-    ];
-
-    for (const stage of stages) {
-      await new Promise((resolve) => setTimeout(resolve, stage.duration));
-      setProgress(stage.progress);
-      setStatus(stage.status);
-    }
-
-    if (Platform.OS !== "web") {
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    }
-
-    setIsComplete(true);
-    setStems(mockStems);
-  };
+  const isComplete = job?.status === "completed";
+  const stems: StemData[] = job?.stems?.map(stem => ({
+    id: stem.id,
+    type: (stem.type === "melody" ? "melodies" : stem.type) as StemData["type"],
+    url: tuneForgeAPI.getStemDownloadUrl(jobId, stem.type),
+    hasMidi: stem.hasMidi,
+    midiUrl: stem.hasMidi ? tuneForgeAPI.getStemDownloadUrl(jobId, stem.type, "midi") : undefined,
+  })) || [];
 
   const handleExport = () => {
     navigation.navigate("Export", {
-      metadata,
+      jobId,
+      metadata: metadata || (job?.metadata ? {
+        title: job.metadata.title || "Unknown",
+        artist: job.metadata.artist || "Unknown",
+        album: job.metadata.album || "",
+        albumArt: job.metadata.albumArt || null,
+        confidence: 100,
+        source: "acrcloud",
+      } : undefined),
       stems,
     });
   };
@@ -130,23 +183,68 @@ export default function RemixProcessingScreen() {
         {
           text: "Stop",
           style: "destructive",
-          onPress: () => navigation.goBack(),
+          onPress: async () => {
+            try {
+              await tuneForgeAPI.cancelJob(jobId);
+            } catch (err) {
+              console.error("Failed to cancel job:", err);
+            }
+            navigation.goBack();
+          },
         },
       ]
     );
   };
 
+  if (isLoading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={Colors.dark.accent} />
+        <ThemedText type="body" style={styles.loadingText}>
+          Loading job status...
+        </ThemedText>
+      </View>
+    );
+  }
+
+  if (error || !job) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Feather name="alert-circle" size={48} color={Colors.dark.error} />
+        <ThemedText type="body" style={styles.errorText}>
+          {error || "Failed to load job"}
+        </ThemedText>
+        <Pressable
+          style={styles.retryButton}
+          onPress={() => {
+            setIsLoading(true);
+            setError(null);
+            pollJobStatus();
+          }}
+        >
+          <ThemedText type="body" style={styles.retryButtonText}>
+            Retry
+          </ThemedText>
+        </Pressable>
+      </View>
+    );
+  }
+
+  const title = metadata?.title || job.metadata?.title || "Unknown Track";
+  const artist = metadata?.artist || job.metadata?.artist || "Unknown Artist";
+  const status = STATUS_MESSAGES[job.status] || job.progressMessage || "Processing...";
+
   return (
     <ScreenScrollView contentContainerStyle={styles.container}>
       <View style={styles.headerSection}>
-        <ThemedText type="h3">{metadata.title}</ThemedText>
+        <ThemedText type="h3">{title}</ThemedText>
         <ThemedText type="body" style={styles.artistText}>
-          {metadata.artist}
+          {artist}
         </ThemedText>
       </View>
 
       <View style={styles.progressSection}>
-        <ProgressBar progress={progress} status={status} />
+        <ProgressBar progress={job.progress} status={status} />
       </View>
 
       <View style={styles.stemsSection}>
@@ -155,17 +253,18 @@ export default function RemixProcessingScreen() {
         </ThemedText>
         <View style={styles.stemsList}>
           {STEM_TYPES.map((type, index) => {
-            const stem = stems.find((s) => s.type === type);
+            const displayType = type === "melody" ? "melodies" : type;
+            const stem = stems.find((s) => s.type === displayType || s.type === type);
             const stemId = stem?.id ?? type;
             const isLoadingStems = !isComplete;
             const stemProgress = isLoadingStems
-              ? Math.min(100, Math.max(0, (progress - index * 15) * 2))
+              ? Math.min(100, Math.max(0, (job.progress - index * 15) * 2))
               : 100;
 
             return (
               <StemCard
                 key={type}
-                type={type}
+                type={displayType as StemData["type"]}
                 isPlaying={isTrackPlaying(stemId)}
                 isMuted={isTrackMuted(stemId)}
                 isSolo={isTrackSolo(stemId)}
@@ -180,6 +279,15 @@ export default function RemixProcessingScreen() {
           })}
         </View>
       </View>
+
+      {job.error ? (
+        <View style={styles.errorSection}>
+          <Feather name="alert-triangle" size={20} color={Colors.dark.error} />
+          <ThemedText type="body" style={styles.errorSectionText}>
+            {job.error}
+          </ThemedText>
+        </View>
+      ) : null}
 
       {!isComplete ? (
         <Pressable
@@ -215,6 +323,31 @@ const styles = StyleSheet.create({
   container: {
     gap: Spacing.lg,
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: Colors.dark.backgroundRoot,
+    gap: Spacing.md,
+  },
+  loadingText: {
+    color: Colors.dark.textSecondary,
+  },
+  errorText: {
+    color: Colors.dark.error,
+    textAlign: "center",
+  },
+  retryButton: {
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    backgroundColor: Colors.dark.accent,
+    borderRadius: BorderRadius.sm,
+    marginTop: Spacing.md,
+  },
+  retryButtonText: {
+    color: Colors.dark.buttonText,
+    fontWeight: "600",
+  },
   headerSection: {
     alignItems: "center",
     gap: Spacing.xs,
@@ -238,6 +371,18 @@ const styles = StyleSheet.create({
   },
   stemsList: {
     gap: Spacing.sm,
+  },
+  errorSection: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    padding: Spacing.md,
+    backgroundColor: Colors.dark.error + "20",
+    borderRadius: BorderRadius.sm,
+  },
+  errorSectionText: {
+    flex: 1,
+    color: Colors.dark.error,
   },
   cancelButton: {
     alignItems: "center",

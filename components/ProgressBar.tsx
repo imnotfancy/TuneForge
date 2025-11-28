@@ -11,12 +11,13 @@ import { LinearGradient } from "expo-linear-gradient";
 import { ThemedText } from "@/components/ThemedText";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 
-interface ProgressBarProps {
+export interface ProgressBarProps {
   progress: number;
-  status: string;
+  status?: string;
+  showPercentage?: boolean;
 }
 
-export function ProgressBar({ progress, status }: ProgressBarProps) {
+export function ProgressBar({ progress, status, showPercentage = true }: ProgressBarProps) {
   const animatedWidth = useSharedValue(0);
 
   React.useEffect(() => {
@@ -32,12 +33,16 @@ export function ProgressBar({ progress, status }: ProgressBarProps) {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <ThemedText type="body">{status}</ThemedText>
-        <ThemedText type="bodyLarge" style={styles.percentage}>
-          {Math.round(progress)}%
-        </ThemedText>
-      </View>
+      {(status || showPercentage) ? (
+        <View style={styles.header}>
+          {status ? <ThemedText type="body">{status}</ThemedText> : <View />}
+          {showPercentage ? (
+            <ThemedText type="bodyLarge" style={styles.percentage}>
+              {Math.round(progress)}%
+            </ThemedText>
+          ) : null}
+        </View>
+      ) : null}
       <View style={styles.trackContainer}>
         <Animated.View style={[styles.progressContainer, animatedStyle]}>
           <LinearGradient

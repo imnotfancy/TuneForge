@@ -38,15 +38,16 @@ export type RootStackParamList = {
   AudioInput: undefined;
   RecognitionResults: {
     audioUri: string;
-    metadata: TrackMetadata;
+    jobId: string;
   };
   RemixProcessing: {
-    audioUri: string;
-    metadata: TrackMetadata;
+    jobId: string;
+    metadata?: TrackMetadata;
   };
   Export: {
-    metadata: TrackMetadata;
-    stems: StemData[];
+    jobId: string;
+    metadata?: TrackMetadata;
+    stems?: StemData[];
   };
   Settings: undefined;
 };

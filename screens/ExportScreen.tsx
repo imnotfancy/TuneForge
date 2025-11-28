@@ -18,7 +18,10 @@ const formatStemName = (type: string) => type.charAt(0).toUpperCase() + type.sli
 export default function ExportScreen() {
   const route = useRoute<RouteType>();
   const navigation = useNavigation();
-  const { metadata, stems } = route.params;
+  const { metadata, stems = [] } = route.params;
+
+  const title = metadata?.title || "Unknown Track";
+  const artist = metadata?.artist || "Unknown Artist";
 
   const [downloadedStems, setDownloadedStems] = useState<Set<string>>(new Set());
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
@@ -71,7 +74,7 @@ export default function ExportScreen() {
 
     try {
       await Share.share({
-        message: `Check out my remix of "${metadata.title}" by ${metadata.artist} - created with TuneForge!`,
+        message: `Check out my remix of "${title}" by ${artist} - created with TuneForge!`,
       });
     } catch (error) {
       console.error("Share error:", error);
@@ -83,9 +86,9 @@ export default function ExportScreen() {
   return (
     <ScreenScrollView contentContainerStyle={styles.container}>
       <View style={styles.headerSection}>
-        <ThemedText type="h3">{metadata.title}</ThemedText>
+        <ThemedText type="h3">{title}</ThemedText>
         <ThemedText type="body" style={styles.artistText}>
-          {metadata.artist}
+          {artist}
         </ThemedText>
       </View>
 
