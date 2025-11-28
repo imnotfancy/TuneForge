@@ -74,6 +74,15 @@ args = "npm run dev"
 waitForPort = 8081
 ensurePreviewReachable = "/status"
 
+[[workflows.workflow]]
+name = "Backend Server"
+mode = "parallel"
+author = 41206752
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npx tsx server/src/index.ts"
+
 [agent]
 stack = "EXPO"
 integrations = ["spotify:1.0.0"]
