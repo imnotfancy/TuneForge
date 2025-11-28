@@ -25,6 +25,7 @@ import Animated, {
 import { ThemedText } from "@/components/ThemedText";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import tuneForgeAPI, { SongSuggestion } from "@/services/api";
+import { searchMusicBrainz } from "@/services/musicbrainz";
 
 interface SongSearchInputProps {
   onSelectSong: (song: SongSuggestion) => void;
@@ -69,10 +70,32 @@ export function SongSearchInput({ onSelectSong, placeholder = "Search by title, 
     );
 
     try {
-      const result = await tuneForgeAPI.searchByText(searchQuery, searchType);
-      setSuggestions(result.suggestions);
+      let results: SongSuggestion[] = [];
       
-      if (result.suggestions.length > 0 && Platform.OS !== 'web') {
+      if (searchType === 'title') {
+        try {
+          const result = await tuneForgeAPI.searchBySpotify(searchQuery, 10);
+          results = result.suggestions;
+        } catch {
+          try {
+            const result = await tuneForgeAPI.searchByText(searchQuery, searchType);
+            results = result.suggestions;
+          } catch {
+            results = await searchMusicBrainz(searchQuery, 10);
+          }
+        }
+      } else {
+        try {
+          const result = await tuneForgeAPI.searchByText(searchQuery, searchType);
+          results = result.suggestions;
+        } catch {
+          results = await searchMusicBrainz(searchQuery, 10);
+        }
+      }
+      
+      setSuggestions(results);
+      
+      if (results.length > 0 && Platform.OS !== 'web') {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       }
     } catch (err) {

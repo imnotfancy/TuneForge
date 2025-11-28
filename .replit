@@ -76,6 +76,7 @@ ensurePreviewReachable = "/status"
 
 [agent]
 stack = "EXPO"
+integrations = ["spotify:1.0.0"]
 
 [deployment]
 deploymentTarget = "static"

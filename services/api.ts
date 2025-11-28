@@ -4,7 +4,7 @@ import { Platform } from 'react-native';
 
 const getBaseUrl = () => {
   if (Platform.OS === 'web') {
-    return '/api';
+    return 'http://localhost:3001/api';
   }
   const debuggerHost = Constants.expoConfig?.hostUri?.split(':')[0];
   if (debuggerHost) {
@@ -301,6 +301,15 @@ class TuneForgeAPI {
   async searchByHumming(audioBuffer: string): Promise<HummingSearchResult> {
     try {
       const response = await api.post('/search/humming', { audioBuffer });
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  async searchBySpotify(query: string, limit: number = 10): Promise<TextSearchResult> {
+    try {
+      const response = await api.get('/search/spotify', { params: { query, limit } });
       return response.data;
     } catch (error) {
       throw this.handleError(error);

@@ -346,4 +346,70 @@ router.get('/musicbrainz', async (req: Request, res: Response) => {
   }
 });
 
+router.get('/spotify', async (req: Request, res: Response) => {
+  try {
+    const { query, limit } = req.query;
+    
+    if (!query || typeof query !== 'string') {
+      return res.status(400).json({ error: 'Query required' });
+    }
+
+    const { searchTracks } = await import('../services/spotify.js');
+    const results = await searchTracks(query, parseInt(limit as string) || 10);
+    
+    const suggestions: SongSuggestion[] = results.map((track, index) => ({
+      id: track.id,
+      title: track.title,
+      artist: track.artist,
+      album: track.album,
+      albumArt: track.albumArt,
+      isrc: track.isrc,
+      confidence: (track.popularity || 50) / 100,
+      source: 'spotify' as any,
+      spotifyId: track.spotifyId,
+    }));
+
+    return res.json({ suggestions, source: 'spotify' });
+  } catch (error) {
+    console.error('Spotify search error:', error);
+    return res.status(500).json({ error: 'Spotify search failed' });
+  }
+});
+
+router.get('/spotify/track/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    
+    const { getTrackById } = await import('../services/spotify.js');
+    const track = await getTrackById(id);
+    
+    if (!track) {
+      return res.status(404).json({ error: 'Track not found' });
+    }
+
+    return res.json({ track });
+  } catch (error) {
+    console.error('Spotify track lookup error:', error);
+    return res.status(500).json({ error: 'Track lookup failed' });
+  }
+});
+
+router.get('/spotify/isrc/:isrc', async (req: Request, res: Response) => {
+  try {
+    const { isrc } = req.params;
+    
+    const { getTrackByIsrc } = await import('../services/spotify.js');
+    const track = await getTrackByIsrc(isrc);
+    
+    if (!track) {
+      return res.status(404).json({ error: 'Track not found' });
+    }
+
+    return res.json({ track });
+  } catch (error) {
+    console.error('Spotify ISRC lookup error:', error);
+    return res.status(500).json({ error: 'ISRC lookup failed' });
+  }
+});
+
 export default router;
