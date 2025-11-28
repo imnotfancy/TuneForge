@@ -218,9 +218,10 @@ router.post('/humming', async (req: Request, res: Response) => {
         candidatePath = path.resolve(AUDIO_ROOT, audioPath);
         const realPath = fs.realpathSync(candidatePath);
         // Check for containment. Allow exactly AUDIO_ROOT or any file within it (subdirectory, file).
+        // Use path.relative to robustly determine if realPath is contained in AUDIO_ROOT
+        const rel = path.relative(AUDIO_ROOT, realPath);
         if (
-          realPath === AUDIO_ROOT ||
-          (realPath.startsWith(AUDIO_ROOT + path.sep))
+          rel && !rel.startsWith('..') && !path.isAbsolute(rel)
         ) {
           safeResolvedPath = realPath;
         } else {
