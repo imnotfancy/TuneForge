@@ -1,0 +1,137 @@
+### PoC App Specification: "TuneForge" – AI Music Analyzer & Remixer
+
+#### Overview
+TuneForge is a private Proof-of-Concept (PoC) mobile app built with Snapchat's Valdi UI framework, demonstrating a seamless workflow for music recognition, metadata enrichment, and creative remixing. Users record or upload short audio clips (e.g., 15-30 seconds of a song), identify the track via ACRCloud (primary) or AcoustID (fallback), and optionally process the full track for stem separation and MIDI generation using the Fadr API. The app emphasizes privacy: all processing uses API keys stored locally, with no user data persisted on servers beyond what's required for API calls.
+
+**Target Platforms**: iOS and Android (cross-compiled from Valdi's TypeScript codebase).  
+**Tech Stack**: 
+- UI: Valdi (declarative TSX for native views).
+- Audio: Native platform APIs (AVFoundation on iOS, MediaRecorder on Android) via Valdi's polyglot bindings.
+- Backend: Direct HTTP calls to APIs (no custom server for PoC).
+- State Management: Valdi's built-in hooks (e.g., `useState`, `useEffect`).
+**Estimated Build Time**: 2-3 days for a functional prototype (assuming familiarity with TypeScript).  
+**Privacy Notes**: Offline-capable for recording; API calls are fire-and-forget with local result caching. No analytics or cloud sync.
+
+#### Key Features & User Flow
+The app follows a linear, intuitive flow optimized for quick demos (under 1 minute per session):
+
+1. **Audio Input Screen**: 
+   - Options: Tap "Record" (mic input, 15s timer) or "Upload" (file picker for MP3/WAV).
+   - UI: Large central button with waveform preview (using Valdi's `<Canvas>` for real-time viz).
+   - Post-capture: Auto-triggers recognition.
+
+2. **Recognition & Metadata Screen**:
+   - Displays loading spinner, then results: Track title, artist, album art (fetched via API), confidence score.
+   - Fallback: If ACRCloud fails (e.g., rate limit), seamlessly switch to AcoustID.
+   - UI: Card-based layout with album art hero, metadata list, and "Remix This?" CTA button.
+   - Enrichment: Links to Spotify/YouTube if available.
+
+3. **Remixing Screen** (Optional):
+   - Prompt for full track upload (if not already provided).
+   - Processes via Fadr: Generates 5 core stems (vocals, drums, bass, melodies, instrumental) (potential for extending with fadr offering the following options with a full separation: Instrumental, Melodies, Drums, Vocals, Bass, Background Vocals, Lead Vocals, Kick, Other Drums, Snare, Acoustic Guitar, Piano, Wind, Other Melodies, Strings, Electric Guitar= + MIDI files for vocals/bass/melodies + chord progression MIDI/TXT + key/tempo detection.
+   - UI: Progress bar with stem previews (playable mini-clips), toggle switches for stem muting/soloing, export buttons for individual stems/MIDI as ZIP.
+   - Demo Remix: Simple drag-to-reorder stems with auto-sync (using Fadr's detected BPM/key).
+
+4. **Export/Share Screen**:
+   - Download stems/MIDI to device; share via native share sheet.
+   - UI: Grid of assets with play/preview buttons.
+
+**Edge Cases**:
+- No match: Suggest manual search or retry.
+- API Errors: Retry button with exponential backoff; log to console for debugging.
+- Offline: Queue actions for later (using Valdi's local storage hooks).
+
+#### Architecture
+TuneForge uses a modular Valdi structure for hot-reload efficiency during PoC iteration. Core modules:
+
+| Module | Description | Valdi Integration | API Dependencies |
+|--------|-------------|-------------------|------------------|
+| **AudioCapture** | Handles recording/upload; generates audio buffer for fingerprinting. | Native bindings: `<AudioRecorder>` polyglot module for mic access; file picker via platform APIs. | None (local). |
+| **RecognitionEngine** | Primary: ACRCloud for fingerprint submission. Fallback: AcoustID (local fingerprint gen + API lookup). | `<NetworkRequest>` for async HTTP; `<LoadingOverlay>` for UX. | ACRCloud (REST POST audio → JSON metadata); AcoustID (pyacoustid-like logic via JS port or native). |
+| **RemixProcessor** | Uploads full track to Fadr; polls task status; downloads stems/MIDI. | `<TaskQueue>` for polling (5s intervals); `<AudioPlayer>` for previews. | Fadr API (POST upload → task ID → GET stems/MIDI URLs). |
+| **UI Components** | Reusable: `<Waveform>`, `<StemCard>`, `<MetadataCard>`. | TSX with flexbox layout; native animations for transitions. | None. |
+| **StateManager** | Global store for results (e.g., track info, stems array). | Valdi's `useGlobalState` hook. | N/A. |
+
+**Data Flow Diagram** (Conceptual):
+- Input Audio → Fingerprint (local) → ACRCloud Query → Metadata JSON.
+- If fail: → AcoustID Fingerprint + Query → Metadata.
+- User Opt-In: Full Track → Fadr Upload → Task Poll → Stems/MIDI Assets → Local Cache + Preview.
+
+**Security/Privacy**:Use secrets for api keys. All downloads to app sandbox.
+
+#### API Integrations
+Detailed specs for each service, including auth, endpoints, and error handling.
+
+| API | Role | Auth & Setup | Key Endpoints & Flow | PoC Limits & Costs | Fallback/Notes |
+|-----|------|--------------|----------------------|--------------------|---------------|
+| **ACRCloud** (Primary Recognition) | Fast, accurate music ID from short clips; 40M+ track DB. | API Key + Access Key (free signup at acrcloud.com). Use HMAC-SHA1 signing for requests. | 1. POST `/v1/identify` (multipart audio file or URL; params: `access_key`, `data_type=recorded`, `signature_version=1`).<br>2. Response: JSON with `status.code=0` → `music[0]` (title, artist, etc.).<br>Handle `code=3` (no match) → fallback. | Free: 1,000 queries/day. | High accuracy; add timestamp/bucket for custom DB if needed. |
+| **AcoustID** (Fallback) | Open-source fingerprinting; MusicBrainz-linked metadata (2M+ tracks). | Free API Key (acoustid.org). Use JS lib like `acoustid-js` or port pyacoustid. | 1. Local: Generate fingerprint (Chromaprint algo on audio buffer).<br>2. POST `/v2/lookup` (params: `client=your_key`, `fingerprint=hex_string`, `duration=secs`).<br>Response: JSON `results` array → MusicBrainz IDs → fetch metadata. | Free/unlimited non-commercial. | Slower but offline-fingerprintable; resolve MBIDs via MusicBrainz API for full details. |
+| **Fadr API** | Stem separation (vocals/drums/bass/melodies/instrumental) + MIDI gen (per stem except drums + chords) + key/tempo/chords. | Bearer Token (Fadr Plus sub: $10/mo; API key from dashboard). | 1. POST `/upload` → presigned PUT URL; upload file.<br>2. POST `/assets` → create asset ID.<br>3. POST `/tasks` (body: `{asset_id, type: "stem"}`) → task ID.<br>4. Poll GET `/tasks/{id}` (every 5s) until `status=completed`.<br>5. From task: Get stem/MIDI asset IDs → POST `/download/{asset_id}` → presigned GET URLs; download files.<br>Response: Stems as WAV/MP3; MIDI as .mid; extras: key/tempo JSON, chords TXT/MID. | $10/mo covers ~1,000 stems; free tier for basic but no API. | Poll timeout: 2min; errors: Retry on 429. Exports ZIP for PoC demo. |
+
+**Example Fadr Flow in TS (Valdi Hook)**:
+```typescript
+import { useEffect, useState } from 'valdi_core/src/hooks';
+
+function useFadrStems(trackUrl: string, apiKey: string) {
+  const [stems, setStems] = useState([]);
+  useEffect(() => {
+    // 1. Upload
+    fetch('https://api.fadr.com/upload', { headers: { Authorization: `Bearer ${apiKey}` } })
+      .then(res => res.json())
+      .then(url => fetch(url, { method: 'PUT', body: fetch(trackUrl).then(r => r.blob()) }));
+    // 2. Create asset/task, poll, download...
+    // Simplified: Set stems on completion
+  }, [trackUrl]);
+  return stems;
+}
+```
+
+#### Valdi Implementation Guide
+Leverage Valdi's native compilation for smooth audio playback and gestures (e.g., swipe to solo stems).
+
+**Project Setup** (from GitHub docs):
+1. `npm install -g @snap/valdi`
+2. `valdi dev_setup && valdi bootstrap my-poc`
+3. `valdi install ios android`
+4. Add VSCode extension for TSX hot-reload.
+
+**Core UI Structure** (App.tsx):
+```tsx
+import { App, View, Text, Button, AudioPlayer } from 'valdi_core';
+
+function TuneForgeApp() {
+  const [screen, setScreen] = useState('input'); // 'input' | 'results' | 'remix'
+  const [results, setResults] = useState({ track: '', artist: '', stems: [] });
+
+  return (
+    <View style={{ flex: 1, backgroundColor: '#000' }}>
+      {screen === 'input' && <RecordButton onComplete={handleCapture} />}
+      {screen === 'results' && (
+        <View>
+          <Text variant="title">{results.track}</Text>
+          <Button onPress={() => setScreen('remix')}>Remix Stems</Button>
+        </View>
+      )}
+      {screen === 'remix' && (
+        <View>
+          {results.stems.map(stem => (
+            <StemCard key={stem.id} audio={stem.url} label={stem.type}>
+              <AudioPlayer src={stem.url} />
+            </StemCard>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+export default App(TuneForgeApp);
+```
+- **Hot Reload**: Edit TSX → instant update in simulator.
+- **Native Audio**: Bind `<AudioPlayer>` to AVAudioPlayer (iOS) for low-latency previews.
+- **Gestures**: Use Valdi's `<GestureHandler>` for stem dragging/reordering.
+
+**Build & Test**:
+- `valdi run ios` / `valdi run android` for emulators.
+- Unit Tests: Valdi's built-in framework for component snapshots.
+- Demo Data: Mock APIs with local JSON for offline testing.
