@@ -4,9 +4,11 @@ import crypto from 'crypto';
 import axios from 'axios';
 import FormData from 'form-data';
 import fs from 'fs';
+import path from 'path';
 import * as songstats from '../services/songstats.js';
 import * as itunes from '../services/itunes.js';
 
+const UPLOADS_ROOT = process.env.UPLOADS_ROOT || '/tmp/uploads';  // adjust as appropriate
 const router = Router();
 
 interface SongSuggestion {
@@ -228,8 +230,17 @@ router.post('/humming', async (req: Request, res: Response) => {
 
     const formData = new FormData();
     
-    if (audioPath && fs.existsSync(audioPath)) {
-      formData.append('sample', fs.createReadStream(audioPath));
+    if (audioPath) {
+      // Validate path: resolve against UPLOADS_ROOT and ensure containment
+      const safeAudioPath = path.resolve(UPLOADS_ROOT, audioPath);
+      if (!safeAudioPath.startsWith(UPLOADS_ROOT)) {
+        return res.status(403).json({ error: 'Forbidden audioPath' });
+      }
+      if (fs.existsSync(safeAudioPath)) {
+        formData.append('sample', fs.createReadStream(safeAudioPath));
+      } else {
+        return res.status(404).json({ error: 'Audio file not found' });
+      }
     } else if (audioBuffer) {
       const buffer = Buffer.from(audioBuffer, 'base64');
       formData.append('sample', buffer, { filename: 'audio.wav' });
