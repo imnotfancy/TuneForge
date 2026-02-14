@@ -5,6 +5,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { z } from 'zod';
+import rateLimit from 'express-rate-limit';
 
 import { db } from '../models/db.js';
 import { jobs, assets, NewJob } from '../models/schema.js';
@@ -12,6 +13,12 @@ import { processJob } from '../workers/jobProcessor.js';
 
 const router = Router();
 
+// Rate limiter: max 100 requests per 15 minutes per IP
+const fileAccessLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100,
+  message: { error: 'Too many requests, please try again later.' },
+});
 const STORAGE_DIR = process.env.STORAGE_DIR || './storage';
 const UPLOAD_DIR = path.join(STORAGE_DIR, 'uploads');
 
@@ -229,7 +236,7 @@ router.get('/:id', async (req: Request, res: Response) => {
   }
 });
 
-router.get('/:id/stems/:stemType', async (req: Request, res: Response) => {
+router.get('/:id/stems/:stemType', fileAccessLimiter, async (req: Request, res: Response) => {
   try {
     const { id, stemType } = req.params;
     const { format } = req.query;
@@ -276,7 +283,7 @@ router.get('/:id/stems/:stemType', async (req: Request, res: Response) => {
   }
 });
 
-router.get('/:id/download', async (req: Request, res: Response) => {
+router.get('/:id/download', fileAccessLimiter, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     
