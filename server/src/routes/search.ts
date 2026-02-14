@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import crypto from 'crypto';
+import rateLimit from 'express-rate-limit';
 import axios from 'axios';
 import FormData from 'form-data';
 import fs from 'fs';
@@ -9,6 +10,15 @@ import * as itunes from '../services/itunes.js';
 
 const router = Router();
 
+
+// Rate limiter for /humming endpoint: max 20 requests per hour per IP
+const hummingLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 20,                  // limit each IP to 20 requests per windowMs
+  message: {
+    error: 'Too many requests, please try again later'
+  }
+});
 interface SongSuggestion {
   id: string;
   title: string;
@@ -191,7 +201,7 @@ Example response format:
   }
 });
 
-router.post('/humming', async (req: Request, res: Response) => {
+router.post('/humming', hummingLimiter, async (req: Request, res: Response) => {
   try {
     const accessKey = process.env.ACRCLOUD_ACCESS_KEY || process.env.ARCLOUD_ACCESS_KEY;
     const accessSecret = process.env.ACRCLOUD_ACCESS_SECRET || process.env.ARCLOUD_ACCESS_SECRET;
