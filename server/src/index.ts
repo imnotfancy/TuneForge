@@ -8,10 +8,60 @@ import { cleanupExpiredAssets } from './workers/jobProcessor.js';
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+const getAllowedOrigins = (): string | string[] | boolean => {
+  if (process.env.CORS_ORIGIN) {
+    return process.env.CORS_ORIGIN.split(',').map(o => o.trim());
+  }
+  
+  if (process.env.NODE_ENV === 'production') {
+    const replitUrl = process.env.REPL_SLUG && process.env.REPL_OWNER
+      ? `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`
+      : null;
+    
+    const allowedOrigins = [
+      'https://*.replit.dev',
+      'https://*.repl.co',
+    ];
+    
+    if (replitUrl) {
+      allowedOrigins.push(replitUrl);
+    }
+    
+    return allowedOrigins;
+  }
+  
+  return ['http://localhost:5000', 'http://localhost:3000', 'http://127.0.0.1:5000'];
+};
+
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || '*',
+  origin: (origin, callback) => {
+    const allowedOrigins = getAllowedOrigins();
+    
+    if (!origin) {
+      callback(null, true);
+      return;
+    }
+    
+    if (typeof allowedOrigins === 'boolean') {
+      callback(null, allowedOrigins);
+      return;
+    }
+    
+    const origins = Array.isArray(allowedOrigins) ? allowedOrigins : [allowedOrigins];
+    
+    const isAllowed = origins.some(allowed => {
+      if (allowed.includes('*')) {
+        const pattern = new RegExp('^' + allowed.replace(/\*/g, '.*') + '$');
+        return pattern.test(origin);
+      }
+      return allowed === origin;
+    });
+    
+    callback(null, isAllowed);
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
 }));
 
 app.use(express.json());
