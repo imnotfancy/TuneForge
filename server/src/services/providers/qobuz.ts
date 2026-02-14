@@ -109,7 +109,7 @@ export class QobuzProvider extends BaseProvider {
       const formatId = '27'; // FLAC 24-bit
       
       const signature = crypto
-        .createHash('md5')
+        .createHash('sha256') // Changed from 'md5' to 'sha256' for stronger security
         .update(`trackgetFileUrlformat_id${formatId}intentstreamtrack_id${trackId}${timestamp}${this.credentials.apiSecret}`)
         .digest('hex');
       
