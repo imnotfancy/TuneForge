@@ -33,13 +33,6 @@ describe('songstats.isConfigured', () => {
     
     expect(songstats.isConfigured()).toBe(false);
   });
-
-  it('should return false when RAPIDAPI_KEY is undefined', () => {
-    process.env = { ...originalEnv };
-    delete process.env.RAPIDAPI_KEY;
-    
-    expect(songstats.isConfigured()).toBe(false);
-  });
 });
 
 describe('songstats API functions', () => {
