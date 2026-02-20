@@ -1,14 +1,25 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import crypto from 'crypto';
+import rateLimit from 'express-rate-limit';
 import axios from 'axios';
 import FormData from 'form-data';
 import fs from 'fs';
+import path from 'path';
 import * as songstats from '../services/songstats.js';
 import * as itunes from '../services/itunes.js';
 
 const router = Router();
 
+
+// Rate limiter for /humming endpoint: max 20 requests per hour per IP
+const hummingLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 20,                  // limit each IP to 20 requests per windowMs
+  message: {
+    error: 'Too many requests, please try again later'
+  }
+});
 interface SongSuggestion {
   id: string;
   title: string;
@@ -191,7 +202,7 @@ Example response format:
   }
 });
 
-router.post('/humming', async (req: Request, res: Response) => {
+router.post('/humming', hummingLimiter, async (req: Request, res: Response) => {
   try {
     const accessKey = process.env.ACRCLOUD_ACCESS_KEY || process.env.ARCLOUD_ACCESS_KEY;
     const accessSecret = process.env.ACRCLOUD_ACCESS_SECRET || process.env.ARCLOUD_ACCESS_SECRET;
@@ -206,6 +217,32 @@ router.post('/humming', async (req: Request, res: Response) => {
     
     const { audioPath, audioBuffer } = req.body;
     
+    // Define the root directory for audio files
+    const AUDIO_ROOT = path.resolve(process.cwd(), 'uploads');
+
+    let safeResolvedPath: string | null = null;
+    if (audioPath) {
+      // Normalize and validate audioPath relative to the root, using realpathSync
+      let candidatePath: string;
+      try {
+        candidatePath = path.resolve(AUDIO_ROOT, audioPath);
+        const realPath = fs.realpathSync(candidatePath);
+        // Check for containment. Allow exactly AUDIO_ROOT or any file within it (subdirectory, file).
+        // Use path.relative to robustly determine if realPath is contained in AUDIO_ROOT
+        const rel = path.relative(AUDIO_ROOT, realPath);
+        if (
+          rel && !rel.startsWith('..') && !path.isAbsolute(rel)
+        ) {
+          safeResolvedPath = realPath;
+        } else {
+          return res.status(400).json({ error: 'Invalid audioPath' });
+        }
+      } catch (e) {
+        // If realpathSync fails (file doesn't exist or invalid), treat as error
+        return res.status(400).json({ error: 'Invalid audioPath' });
+      }
+    }
+
     if (!audioPath && !audioBuffer) {
       return res.status(400).json({ error: 'No audio provided' });
     }
@@ -228,8 +265,12 @@ router.post('/humming', async (req: Request, res: Response) => {
 
     const formData = new FormData();
     
-    if (audioPath && fs.existsSync(audioPath)) {
-      formData.append('sample', fs.createReadStream(audioPath));
+    if (safeResolvedPath) {
+      if (fs.existsSync(safeResolvedPath)) {
+        formData.append('sample', fs.createReadStream(safeResolvedPath));
+      } else {
+        return res.status(400).json({ error: 'audioPath does not exist' });
+      }
     } else if (audioBuffer) {
       const buffer = Buffer.from(audioBuffer, 'base64');
       formData.append('sample', buffer, { filename: 'audio.wav' });
