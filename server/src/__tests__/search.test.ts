@@ -1,28 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import crypto from 'crypto';
 
-// Import the generateSignature function from search.ts
-// We'll re-implement it here for testing to avoid import issues with the router
-const generateSignature = (
-  accessKey: string,
-  accessSecret: string,
-  httpMethod: string,
-  httpUri: string,
-  dataType: string,
-  signatureVersion: string,
-  timestamp: string
-): string => {
-  const stringToSign = `${httpMethod}\n${httpUri}\n${accessKey}\n${dataType}\n${signatureVersion}\n${timestamp}`;
-  return crypto.createHmac('sha1', accessSecret).update(stringToSign).digest('base64');
-};
-
-// Import Zod schema for testing
-import { z } from 'zod';
-
-const textSearchSchema = z.object({
-  query: z.string().min(1).max(500),
-  type: z.enum(['title', 'lyrics', 'description']).default('title'),
-});
+// Import the generateSignature and textSearchSchema functions from the shared utility
+import { generateSignature, textSearchSchema } from '../utils/acrcrypto';
 
 describe('generateSignature', () => {
   it('should generate a valid HMAC-SHA1 signature', () => {
