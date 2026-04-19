@@ -1,6 +1,4 @@
 import { Router, Request, Response } from 'express';
-import { z } from 'zod';
-import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import axios from 'axios';
 import FormData from 'form-data';
@@ -8,7 +6,9 @@ import fs from 'fs';
 import path from 'path';
 import * as songstats from '../services/songstats.js';
 import * as itunes from '../services/itunes.js';
+import { generateSignature, textSearchSchema } from '../utils/acrcrypto.js';
 
+const UPLOADS_ROOT = process.env.UPLOADS_ROOT || '/tmp/uploads';  // adjust as appropriate
 const router = Router();
 
 
@@ -38,24 +38,6 @@ interface SearchProgress {
   message: string;
   suggestions: SongSuggestion[];
 }
-
-const textSearchSchema = z.object({
-  query: z.string().min(1).max(500),
-  type: z.enum(['title', 'lyrics', 'description']).default('title'),
-});
-
-const generateSignature = (
-  accessKey: string,
-  accessSecret: string,
-  httpMethod: string,
-  httpUri: string,
-  dataType: string,
-  signatureVersion: string,
-  timestamp: string
-): string => {
-  const stringToSign = `${httpMethod}\n${httpUri}\n${accessKey}\n${dataType}\n${signatureVersion}\n${timestamp}`;
-  return crypto.createHmac('sha1', accessSecret).update(stringToSign).digest('base64');
-};
 
 router.post('/text', async (req: Request, res: Response) => {
   try {
@@ -217,10 +199,11 @@ router.post('/humming', hummingLimiter, async (req: Request, res: Response) => {
     
     const { audioPath, audioBuffer } = req.body;
     
-    // Define the root directory for audio files
-    const AUDIO_ROOT = path.resolve(process.cwd(), 'uploads');
+    // Use UPLOADS_ROOT from environment, resolved to absolute path
+    const AUDIO_ROOT = path.resolve(UPLOADS_ROOT);
 
     let safeResolvedPath: string | null = null;
+    let fileDescriptor: number | null = null;
     if (audioPath) {
       // Normalize and validate audioPath relative to the root, using realpathSync
       let candidatePath: string;
@@ -230,16 +213,21 @@ router.post('/humming', hummingLimiter, async (req: Request, res: Response) => {
         // Check for containment. Allow exactly AUDIO_ROOT or any file within it (subdirectory, file).
         // Use path.relative to robustly determine if realPath is contained in AUDIO_ROOT
         const rel = path.relative(AUDIO_ROOT, realPath);
-        if (
-          rel && !rel.startsWith('..') && !path.isAbsolute(rel)
-        ) {
+        // Allow empty path (rel === '') for AUDIO_ROOT itself, or files within
+        if ((rel === '' || !rel.startsWith('..')) && !path.isAbsolute(rel)) {
           safeResolvedPath = realPath;
+          // Hardening against TOCTOU: open with O_NOFOLLOW to ensure resolved path is not replaced by symlink
+          fileDescriptor = fs.openSync(safeResolvedPath, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
         } else {
-          return res.status(400).json({ error: 'Invalid audioPath' });
+          return res.status(403).json({ error: 'Invalid audioPath: path traversal detected' });
         }
-      } catch (e) {
-        // If realpathSync fails (file doesn't exist or invalid), treat as error
-        return res.status(400).json({ error: 'Invalid audioPath' });
+      } catch (e: any) {
+        // If realpathSync fails (file doesn't exist or invalid), return 404
+        if (e.code === 'ENOENT') {
+          return res.status(404).json({ error: 'Audio file not found' });
+        }
+        // For other errors (e.g., permission denied), also return 404 to avoid leaking info
+        return res.status(404).json({ error: 'Audio file not found' });
       }
     }
 
@@ -265,12 +253,10 @@ router.post('/humming', hummingLimiter, async (req: Request, res: Response) => {
 
     const formData = new FormData();
     
-    if (safeResolvedPath) {
-      if (fs.existsSync(safeResolvedPath)) {
-        formData.append('sample', fs.createReadStream(safeResolvedPath));
-      } else {
-        return res.status(400).json({ error: 'audioPath does not exist' });
-      }
+    if (safeResolvedPath && fileDescriptor !== null) {
+      // Close the validation FD since createReadStream will open its own handle
+      fs.closeSync(fileDescriptor);
+      formData.append('sample', fs.createReadStream(safeResolvedPath));
     } else if (audioBuffer) {
       const buffer = Buffer.from(audioBuffer, 'base64');
       formData.append('sample', buffer, { filename: 'audio.wav' });
