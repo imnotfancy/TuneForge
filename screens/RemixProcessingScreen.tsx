@@ -1,5 +1,18 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
-import { StyleSheet, View, Alert, Platform, Pressable, ActivityIndicator } from "react-native";
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  useMemo,
+} from "react";
+import {
+  StyleSheet,
+  View,
+  Alert,
+  Platform,
+  Pressable,
+  ActivityIndicator,
+} from "react-native";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
@@ -12,21 +25,21 @@ import { StemCard } from "@/components/StemCard";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList, StemData } from "@/navigation/RootStackNavigator";
 import { useMultiTrackPlayer } from "@/hooks/useAudioPlayer";
-import tuneForgeAPI, { JobStatus } from "@/services/api";
+import { tuneForgeAPI, JobStatus } from "@/services/api";
 
-type NavigationProp = NativeStackNavigationProp<RootStackParamList, "RemixProcessing">;
+type NavigationProp = NativeStackNavigationProp<
+  RootStackParamList,
+  "RemixProcessing"
+>;
 type RouteType = RouteProp<RootStackParamList, "RemixProcessing">;
 
-const STEM_TYPES = ["vocals", "drums", "bass", "melody", "instrumental"] as const;
-
-const STEM_DISPLAY_NAMES: Record<string, string> = {
-  vocals: "Vocals",
-  drums: "Drums",
-  bass: "Bass",
-  melody: "Melodies",
-  melodies: "Melodies",
-  instrumental: "Instrumental",
-};
+const STEM_TYPES = [
+  "vocals",
+  "drums",
+  "bass",
+  "melody",
+  "instrumental",
+] as const;
 
 const STATUS_MESSAGES: Record<string, string> = {
   pending: "Preparing to process...",
@@ -50,14 +63,14 @@ export default function RemixProcessingScreen() {
   const isMountedRef = useRef(true);
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  const { 
-    togglePlay, 
-    toggleMute, 
-    toggleSolo, 
+  const {
+    togglePlay,
+    toggleMute,
+    toggleSolo,
     stopAll,
-    isTrackPlaying, 
-    isTrackMuted, 
-    isTrackSolo 
+    isTrackPlaying,
+    isTrackMuted,
+    isTrackSolo,
   } = useMultiTrackPlayer();
 
   const clearPolling = useCallback(() => {
@@ -72,9 +85,9 @@ export default function RemixProcessingScreen() {
 
     try {
       const status = await tuneForgeAPI.getJobStatus(jobId);
-      
+
       if (!isMountedRef.current) return;
-      
+
       setJob(status);
       setIsLoading(false);
       setRetryCount(0);
@@ -87,10 +100,10 @@ export default function RemixProcessingScreen() {
       }
     } catch (err) {
       if (!isMountedRef.current) return;
-      
+
       console.error("Failed to fetch job status:", err);
-      setRetryCount(prev => prev + 1);
-      
+      setRetryCount((prev) => prev + 1);
+
       if (retryCount >= 3) {
         clearPolling();
         setError("Unable to connect to server. Please check your connection.");
@@ -101,11 +114,11 @@ export default function RemixProcessingScreen() {
 
   useEffect(() => {
     isMountedRef.current = true;
-    
+
     pollJobStatus();
-    
+
     pollIntervalRef.current = setInterval(pollJobStatus, 2000);
-    
+
     return () => {
       isMountedRef.current = false;
       clearPolling();
@@ -113,8 +126,47 @@ export default function RemixProcessingScreen() {
     };
   }, [pollJobStatus, clearPolling, stopAll]);
 
+  const isComplete = job?.status === "completed";
+  const stems: StemData[] = useMemo(
+    () =>
+      job?.stems?.map((stem) => ({
+        id: stem.id,
+        type: (stem.type === "melody"
+          ? "melodies"
+          : stem.type) as StemData["type"],
+        url: stem.downloadUrl
+          ? tuneForgeAPI.toAbsoluteUrl(stem.downloadUrl)
+          : tuneForgeAPI.getStemDownloadUrl(jobId, stem.type),
+        hasMidi: stem.hasMidi,
+        midiUrl: stem.hasMidi
+          ? stem.midiUrl
+            ? tuneForgeAPI.toAbsoluteUrl(stem.midiUrl)
+            : tuneForgeAPI.getStemDownloadUrl(jobId, stem.type, "midi")
+          : undefined,
+      })) || [],
+    [job?.stems, jobId],
+  );
+
+  const handleExport = useCallback(() => {
+    navigation.navigate("Export", {
+      jobId,
+      metadata:
+        metadata ||
+        (job?.metadata
+          ? {
+              title: job.metadata.title || "Unknown",
+              artist: job.metadata.artist || "Unknown",
+              album: job.metadata.album || "",
+              albumArt: job.metadata.albumArt || null,
+              confidence: 100,
+              source: "acrcloud",
+            }
+          : undefined),
+      stems,
+    });
+  }, [job?.metadata, jobId, metadata, navigation, stems]);
+
   useEffect(() => {
-    const isComplete = job?.status === "completed";
     navigation.setOptions({
       headerRight: () => (
         <Pressable
@@ -133,31 +185,7 @@ export default function RemixProcessingScreen() {
         </Pressable>
       ),
     });
-  }, [job?.status, navigation]);
-
-  const isComplete = job?.status === "completed";
-  const stems: StemData[] = job?.stems?.map(stem => ({
-    id: stem.id,
-    type: (stem.type === "melody" ? "melodies" : stem.type) as StemData["type"],
-    url: tuneForgeAPI.getStemDownloadUrl(jobId, stem.type),
-    hasMidi: stem.hasMidi,
-    midiUrl: stem.hasMidi ? tuneForgeAPI.getStemDownloadUrl(jobId, stem.type, "midi") : undefined,
-  })) || [];
-
-  const handleExport = () => {
-    navigation.navigate("Export", {
-      jobId,
-      metadata: metadata || (job?.metadata ? {
-        title: job.metadata.title || "Unknown",
-        artist: job.metadata.artist || "Unknown",
-        album: job.metadata.album || "",
-        albumArt: job.metadata.albumArt || null,
-        confidence: 100,
-        source: "acrcloud",
-      } : undefined),
-      stems,
-    });
-  };
+  }, [handleExport, isComplete, navigation]);
 
   const handlePlayPress = async (stemId: string, stemUrl?: string) => {
     if (Platform.OS !== "web") {
@@ -176,23 +204,18 @@ export default function RemixProcessingScreen() {
 
   const handleCancel = () => {
     Alert.alert(
-      "Cancel Processing",
-      "Stop processing and discard results?",
+      "Leave Processing",
+      "Processing may continue on the server. You can return from History when it finishes.",
       [
         { text: "Continue", style: "cancel" },
         {
-          text: "Stop",
+          text: "Leave",
           style: "destructive",
           onPress: async () => {
-            try {
-              await tuneForgeAPI.cancelJob(jobId);
-            } catch (err) {
-              console.error("Failed to cancel job:", err);
-            }
             navigation.goBack();
           },
         },
-      ]
+      ],
     );
   };
 
@@ -232,7 +255,8 @@ export default function RemixProcessingScreen() {
 
   const title = metadata?.title || job.metadata?.title || "Unknown Track";
   const artist = metadata?.artist || job.metadata?.artist || "Unknown Artist";
-  const status = STATUS_MESSAGES[job.status] || job.progressMessage || "Processing...";
+  const status =
+    STATUS_MESSAGES[job.status] || job.progressMessage || "Processing...";
 
   return (
     <ScreenScrollView contentContainerStyle={styles.container}>
@@ -247,6 +271,31 @@ export default function RemixProcessingScreen() {
         <ProgressBar progress={job.progress} status={status} />
       </View>
 
+      {job.analysis?.key || job.analysis?.tempo ? (
+        <View style={styles.analysisSection}>
+          {job.analysis?.key ? (
+            <View style={styles.analysisPill}>
+              <ThemedText type="caption" style={styles.analysisLabel}>
+                KEY
+              </ThemedText>
+              <ThemedText type="body" style={styles.analysisValue}>
+                {job.analysis.key}
+              </ThemedText>
+            </View>
+          ) : null}
+          {job.analysis?.tempo ? (
+            <View style={styles.analysisPill}>
+              <ThemedText type="caption" style={styles.analysisLabel}>
+                BPM
+              </ThemedText>
+              <ThemedText type="body" style={styles.analysisValue}>
+                {Math.round(job.analysis.tempo)}
+              </ThemedText>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+
       <View style={styles.stemsSection}>
         <ThemedText type="caption" style={styles.sectionLabel}>
           STEMS
@@ -254,7 +303,9 @@ export default function RemixProcessingScreen() {
         <View style={styles.stemsList}>
           {STEM_TYPES.map((type, index) => {
             const displayType = type === "melody" ? "melodies" : type;
-            const stem = stems.find((s) => s.type === displayType || s.type === type);
+            const stem = stems.find(
+              (s) => s.type === displayType || s.type === type,
+            );
             const stemId = stem?.id ?? type;
             const isLoadingStems = !isComplete;
             const stemProgress = isLoadingStems
@@ -268,7 +319,7 @@ export default function RemixProcessingScreen() {
                 isPlaying={isTrackPlaying(stemId)}
                 isMuted={isTrackMuted(stemId)}
                 isSolo={isTrackSolo(stemId)}
-                hasMidi={stem?.hasMidi ?? (type !== "drums" && type !== "instrumental")}
+                hasMidi={stem?.hasMidi ?? false}
                 isLoading={isLoadingStems}
                 progress={stemProgress}
                 onPlayPress={() => handlePlayPress(stemId, stem?.url)}
@@ -359,6 +410,25 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.dark.backgroundDefault,
     padding: Spacing.md,
     borderRadius: BorderRadius.sm,
+  },
+  analysisSection: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+  },
+  analysisPill: {
+    flex: 1,
+    backgroundColor: Colors.dark.backgroundDefault,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.sm,
+    gap: Spacing.xs,
+  },
+  analysisLabel: {
+    color: Colors.dark.textSecondary,
+    letterSpacing: 1,
+  },
+  analysisValue: {
+    color: Colors.dark.text,
+    fontWeight: "700",
   },
   stemsSection: {
     gap: Spacing.sm,

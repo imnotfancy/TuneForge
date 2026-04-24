@@ -46,6 +46,10 @@ DATABASE_URL=postgresql://user:password@localhost:5432/tuneforge
 PORT=3001
 CORS_ORIGIN=*
 STORAGE_DIR=./storage
+ENABLE_CATALOG_ACQUISITION=false
+FADR_API_KEY=...
+FADR_POLL_INTERVAL_MS=5000
+FADR_POLL_TIMEOUT_MS=600000
 
 # Optional - Enhanced Features
 REDIS_URL=redis://localhost:6379
@@ -53,26 +57,28 @@ OPENAI_API_KEY=sk-...
 ACRCLOUD_ACCESS_KEY=...
 ACRCLOUD_ACCESS_SECRET=...
 
-# FLAC Providers (at least one recommended)
+# Catalog providers (disabled by default for v1 processing)
 TIDAL_CLIENT_ID=...
 TIDAL_CLIENT_SECRET=...
 DEEZER_ARL=...
 QOBUZ_APP_ID=...
 QOBUZ_APP_SECRET=...
 
-# Stem Separation
+# Optional fallback providers
 LALAL_API_KEY=...
-FADR_API_KEY=...
+BASIC_PITCH_API_URL=http://localhost:7860
+ENABLE_MIDI_FALLBACK=false
 ```
 
 ### 4. Start Development
 
 ```bash
-# Start both frontend and backend
+# Start both frontend and backend from the repo root
 npm run dev
 ```
 
 This starts:
+
 - Expo development server on port 8081
 - Backend API server on port 3001
 
@@ -128,10 +134,10 @@ npx expo start --web
 
 ```bash
 # Start backend only
-npm run server:dev
+npm run dev:server
 
-# Watch mode with auto-restart
-npm run server:watch
+# Start Expo only
+npm run dev:app
 ```
 
 ### Database Changes
@@ -175,7 +181,7 @@ type SongResult = {
   id: string;
   title: string;
   artist: string;
-}
+};
 ```
 
 ### React Native
@@ -286,12 +292,14 @@ SELECT * FROM jobs WHERE id = 'uuid-here';
 ### Common Issues
 
 **"Metro bundler not responding"**
+
 ```bash
 # Clear Metro cache
 npx expo start --clear
 ```
 
 **"Database connection failed"**
+
 ```bash
 # Check DATABASE_URL
 echo $DATABASE_URL
@@ -301,6 +309,7 @@ psql $DATABASE_URL -c "SELECT 1"
 ```
 
 **"Provider not configured"**
+
 - Check environment variables are set
 - Restart backend after adding new variables
 

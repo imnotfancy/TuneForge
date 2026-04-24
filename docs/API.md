@@ -4,7 +4,7 @@
 
 TuneForge provides a RESTful API for music identification, audio processing, and stem separation. The backend runs on port 3001 and communicates with the Expo React Native frontend.
 
-**Key Concept**: The API uses a **context enrichment** approach. Minimal input (song name, Spotify ID, or audio) is progressively enriched with cross-platform metadata via Odesli/song.link, producing rich `songlinkData` that enables FLAC acquisition from multiple streaming providers.
+**Key Concept**: TuneForge v1 processes user-owned audio first. Uploaded or recorded audio is stored, sent through the configured processing provider, and returned as stems, MIDI, and analysis metadata. Search and catalog endpoints remain useful for metadata context, but commercial catalog acquisition is disabled by default.
 
 ## Base URL
 
@@ -22,13 +22,13 @@ Currently, the API does not require authentication. Future versions will impleme
 
 All search endpoints enrich results with cross-platform IDs:
 
-| Field | Description | Example |
-|-------|-------------|---------|
-| `spotifyId` | Spotify track ID | `7tFiyTwD0nx5a1eklYtX2J` |
-| `appleMusicId` | Apple Music track ID | `1440650711` |
-| `tidalId` | Tidal track ID | `36737274` |
-| `deezerId` | Deezer track ID | `568115892` |
-| `isrc` | International Standard Recording Code | `GBUM71029604` |
+| Field          | Description                           | Example                  |
+| -------------- | ------------------------------------- | ------------------------ |
+| `spotifyId`    | Spotify track ID                      | `7tFiyTwD0nx5a1eklYtX2J` |
+| `appleMusicId` | Apple Music track ID                  | `1440650711`             |
+| `tidalId`      | Tidal track ID                        | `36737274`               |
+| `deezerId`     | Deezer track ID                       | `568115892`              |
+| `isrc`         | International Standard Recording Code | `GBUM71029604`           |
 
 This context is stored in jobs as `songlinkData` JSON for audio acquisition.
 
@@ -43,6 +43,7 @@ This context is stored in jobs as `songlinkData` JSON for audio acquisition.
 Check if the server is running.
 
 **Response**
+
 ```json
 {
   "status": "ok",
@@ -62,6 +63,7 @@ Check if the server is running.
 Search for songs using OpenAI GPT-4o-mini for intelligent song identification from titles, lyrics, or descriptions.
 
 **Request Body**
+
 ```json
 {
   "query": "Bohemian Rhapsody Queen",
@@ -72,6 +74,7 @@ Search for songs using OpenAI GPT-4o-mini for intelligent song identification fr
 **Type Options**: `title` (default), `lyrics`, `description`
 
 **Response**
+
 ```json
 {
   "query": "Bohemian Rhapsody Queen",
@@ -104,10 +107,12 @@ Search for songs using OpenAI GPT-4o-mini for intelligent song identification fr
 Direct iTunes catalog search with Odesli enrichment.
 
 **Query Parameters**
+
 - `query` (required) - Search term
 - `limit` (optional) - Max results (default: 10)
 
 **Response**
+
 ```json
 {
   "suggestions": [...],
@@ -124,6 +129,7 @@ Direct iTunes catalog search with Odesli enrichment.
 Identify a song from humming or singing audio via ACRCloud.
 
 **Request Body** (JSON, not multipart)
+
 ```json
 {
   "audioPath": "/path/to/audio.wav",
@@ -134,6 +140,7 @@ Identify a song from humming or singing audio via ACRCloud.
 Provide either `audioPath` (server file path) or `audioBuffer` (base64 audio).
 
 **Response**
+
 ```json
 {
   "suggestions": [
@@ -164,15 +171,18 @@ Provide either `audioPath` (server file path) or `audioBuffer` (base64 audio).
 Multi-source search with intelligent fallback chain.
 
 **Query Parameters**
+
 - `query` (required) - Search term
 - `limit` (optional) - Max results (default: 10)
 
 **Fallback Order**:
+
 1. iTunes + Odesli enrichment (primary)
 2. Spotify API
 3. MusicBrainz with smart ranking
 
 **Response**
+
 ```json
 {
   "suggestions": [...],
@@ -217,11 +227,12 @@ Get streaming statistics for track.
 Open database search with artist prioritization.
 
 **Query Parameters**
+
 - `query` (required) - Search term
 - `type` (optional) - `recording` or `artist`
 
-
 **Response**
+
 ```json
 {
   "isrc": "GBUM71029604",
@@ -252,9 +263,11 @@ Open database search with artist prioritization.
 Get a list of recent jobs.
 
 **Query Parameters**
+
 - `limit` (optional) - Number of jobs to return (default: 20)
 
 **Response**
+
 ```json
 {
   "jobs": [
@@ -277,6 +290,7 @@ Get a list of recent jobs.
 Create a new processing job.
 
 **Request Body**
+
 ```json
 {
   "sourceType": "spotify_id",
@@ -299,6 +313,7 @@ Create a new processing job.
 | `file_upload` | Uploaded file path | (set by upload endpoint) |
 
 **Response**
+
 ```json
 {
   "id": "dcefb324-3fae-4585-8b58-996feab7e972",
@@ -314,10 +329,12 @@ Create a new processing job.
 Upload an audio file and create a job.
 
 **Request**
+
 - Content-Type: `multipart/form-data`
 - Field: `audio` (audio file: MP3, WAV, FLAC, M4A)
 
 **Response**
+
 ```json
 {
   "id": "uuid",
@@ -333,6 +350,7 @@ Upload an audio file and create a job.
 Get the current status and metadata of a job.
 
 **Response**
+
 ```json
 {
   "id": "uuid",
@@ -348,16 +366,30 @@ Get the current status and metadata of a job.
     "isrc": "GBUM71029604"
   },
   "audioSource": {
-    "format": "FLAC",
-    "service": "deezer"
+    "format": "WAV",
+    "service": "upload"
   },
   "stems": [
     {
+      "id": "asset-uuid",
       "type": "vocals",
       "hasMidi": true,
-      "downloadUrl": "/api/jobs/uuid/stems/vocals"
+      "downloadUrl": "/api/jobs/uuid/stems/vocals",
+      "midiUrl": "/api/jobs/uuid/stems/vocals?format=midi"
     }
   ],
+  "analysis": {
+    "provider": "fadr",
+    "key": "C minor",
+    "tempo": 128,
+    "chordProgression": ["Cm", "Ab", "Eb", "Bb"],
+    "fadr": {
+      "sourceAssetId": "fadr-source-id",
+      "taskId": "fadr-task-id",
+      "stemAssetIds": ["..."],
+      "midiAssetIds": ["..."]
+    }
+  },
   "error": null,
   "expiresAt": "2025-11-29T08:00:00.000Z",
   "createdAt": "2025-11-28T08:00:00.000Z"
@@ -382,12 +414,16 @@ Get the current status and metadata of a job.
 Download a separated stem file.
 
 **Parameters**
+
 - `id` - Job ID
 - `type` - Stem type: `vocals`, `drums`, `bass`, `melody`, `instrumental`
 
 **Response**
+
 - Content-Type: `audio/wav`
 - Binary audio file
+
+Pass `?format=midi` to download the MIDI file for a stem when `hasMidi` is true.
 
 ### Get Download Info
 
@@ -396,22 +432,21 @@ Download a separated stem file.
 Get download URLs for all stems and MIDI files.
 
 **Response**
+
 ```json
 {
-  "stems": [
+  "files": [
     {
       "type": "vocals",
-      "url": "/api/jobs/uuid/stems/vocals",
-      "hasMidi": true,
-      "midiUrl": "/api/jobs/uuid/midi/vocals"
+      "audioUrl": "/api/jobs/uuid/stems/vocals",
+      "midiUrl": "/api/jobs/uuid/stems/vocals?format=midi"
     },
     {
       "type": "drums",
-      "url": "/api/jobs/uuid/stems/drums",
-      "hasMidi": false
+      "audioUrl": "/api/jobs/uuid/stems/drums",
+      "midiUrl": null
     }
-  ],
-  "expiresAt": "2025-11-29T08:00:00.000Z"
+  ]
 }
 ```
 
@@ -440,6 +475,7 @@ All endpoints may return error responses in the following format:
 ## Rate Limiting
 
 The Odesli/song.link API has rate limits:
+
 - Maximum 10 requests per minute
 - 7-second delay between requests recommended
 

@@ -1,5 +1,12 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { View, StyleSheet, Platform, Alert, Pressable, ScrollView } from "react-native";
+import {
+  View,
+  StyleSheet,
+  Platform,
+  Alert,
+  Pressable,
+  ScrollView,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -22,7 +29,7 @@ import { AnalyzingAnimation } from "@/components/AnalyzingAnimation";
 import { useScreenInsets } from "@/hooks/useScreenInsets";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
-import tuneForgeAPI, { SongSuggestion } from "@/services/api";
+import { tuneForgeAPI, SongSuggestion } from "@/services/api";
 
 const MAX_RECORDING_SECONDS = 30;
 
@@ -40,24 +47,29 @@ const SUPPORTED_AUDIO_TYPES = [
   "audio/*",
 ];
 
-type InputMode = 'record' | 'search' | 'history';
-type NavigationProp = NativeStackNavigationProp<RootStackParamList, "AudioInput">;
+type InputMode = "record" | "search" | "history";
+type NavigationProp = NativeStackNavigationProp<
+  RootStackParamList,
+  "AudioInput"
+>;
 
 export default function AudioInputScreen() {
   const navigation = useNavigation<NavigationProp>();
   const { paddingTop, paddingBottom } = useScreenInsets();
   const insets = useSafeAreaInsets();
-  
-  const [inputMode, setInputMode] = useState<InputMode>('record');
+
+  const [inputMode, setInputMode] = useState<InputMode>("record");
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [processingMessage, setProcessingMessage] = useState("Identifying track...");
+  const [processingMessage, setProcessingMessage] = useState(
+    "Identifying track...",
+  );
   const [processingProgress, setProcessingProgress] = useState(0);
   const [isHummingMode, setIsHummingMode] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [selectedSong, setSelectedSong] = useState<SongSuggestion | null>(null);
-  
+
   const [permissionResponse, requestPermission] = Audio.usePermissions();
   const recordingRef = useRef<Audio.Recording | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -66,7 +78,7 @@ export default function AudioInputScreen() {
   useFocusEffect(
     useCallback(() => {
       historyKeyRef.current += 1;
-    }, [])
+    }, []),
   );
 
   useEffect(() => {
@@ -87,7 +99,7 @@ export default function AudioInputScreen() {
         if (!result.granted) {
           Alert.alert(
             "Microphone Access Required",
-            "Please enable microphone access in your device settings to record audio."
+            "Please enable microphone access in your device settings to record audio.",
           );
           return;
         }
@@ -99,7 +111,7 @@ export default function AudioInputScreen() {
       });
 
       const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
+        Audio.RecordingOptionsPresets.HIGH_QUALITY,
       );
       recordingRef.current = recording;
 
@@ -121,7 +133,10 @@ export default function AudioInputScreen() {
       }, 1000);
     } catch (error) {
       console.error("Failed to start recording:", error);
-      Alert.alert("Recording Error", "Failed to start recording. Please try again.");
+      Alert.alert(
+        "Recording Error",
+        "Failed to start recording. Please try again.",
+      );
     }
   };
 
@@ -138,7 +153,9 @@ export default function AudioInputScreen() {
         recordingRef.current = null;
 
         if (Platform.OS !== "web") {
-          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          await Haptics.notificationAsync(
+            Haptics.NotificationFeedbackType.Success,
+          );
         }
 
         setIsRecording(false);
@@ -170,19 +187,23 @@ export default function AudioInputScreen() {
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
-        
+
         const fileName = asset.name?.toLowerCase() ?? "";
-        const isSupported = 
+        const isSupported =
           fileName.endsWith(".mp3") ||
           fileName.endsWith(".wav") ||
           fileName.endsWith(".flac") ||
           fileName.endsWith(".m4a") ||
           fileName.endsWith(".aac");
 
-        if (!isSupported && asset.mimeType && !asset.mimeType.startsWith("audio/")) {
+        if (
+          !isSupported &&
+          asset.mimeType &&
+          !asset.mimeType.startsWith("audio/")
+        ) {
           Alert.alert(
             "Unsupported Format",
-            "Please select an audio file (MP3, WAV, FLAC, or M4A)."
+            "Please select an audio file (MP3, WAV, FLAC, or M4A).",
           );
           return;
         }
@@ -199,22 +220,21 @@ export default function AudioInputScreen() {
     setIsProcessing(true);
     setProcessingMessage("Uploading audio...");
     setProcessingProgress(10);
-    
+
     try {
       setProcessingMessage("Analyzing audio patterns...");
       setProcessingProgress(30);
-      
+
       const { id } = await tuneForgeAPI.uploadAudioAndCreateJob(uri);
-      
+
       setProcessingMessage("Processing complete!");
       setProcessingProgress(100);
-      
+
       setTimeout(() => {
         setIsProcessing(false);
         setProcessingProgress(0);
-        
-        navigation.navigate("RecognitionResults", {
-          audioUri: uri,
+
+        navigation.navigate("RemixProcessing", {
           jobId: id,
         });
       }, 500);
@@ -224,61 +244,23 @@ export default function AudioInputScreen() {
       console.error("Failed to process audio:", error);
       Alert.alert(
         "Processing Error",
-        "Failed to process audio. Please try again."
+        "Failed to process audio. Please try again.",
       );
     }
   };
 
   const handleSelectSong = async (song: SongSuggestion) => {
     setSelectedSong(song);
-    
-    if (!song.isrc && !song.spotifyId && !song.appleMusicId) {
-      Alert.alert(
-        "Cannot Process",
-        "This song doesn't have a valid identifier. Try recording or uploading the audio instead."
-      );
-      return;
-    }
-    
-    setIsProcessing(true);
-    setProcessingMessage("Finding high-quality audio...");
-    setProcessingProgress(20);
-    
-    try {
-      const { id } = await tuneForgeAPI.createJobFromSong(song);
-      
-      setProcessingMessage("Acquiring FLAC source...");
-      setProcessingProgress(40);
-      
-      setTimeout(() => {
-        setProcessingMessage("Starting stem separation...");
-        setProcessingProgress(60);
-        
-        setTimeout(() => {
-          setIsProcessing(false);
-          setProcessingProgress(0);
-          setSelectedSong(null);
-          
-          navigation.navigate("RecognitionResults", {
-            audioUri: '',
-            jobId: id,
-          });
-        }, 300);
-      }, 400);
-    } catch (error: any) {
-      setIsProcessing(false);
-      setProcessingProgress(0);
-      setSelectedSong(null);
-      console.error("Failed to process song:", error);
-      
-      const errorMessage = error?.message || "Failed to process this song. Please try again.";
-      Alert.alert("Processing Error", errorMessage);
-    }
+    Alert.alert(
+      "Upload Audio to Process",
+      `"${song.title}" by ${song.artist} can be used as metadata context, but TuneForge v1 only creates stems and MIDI from audio you upload or record.`,
+    );
+    setSelectedSong(null);
   };
 
   const handleSelectFromHistory = (jobId: string) => {
     navigation.navigate("RecognitionResults", {
-      audioUri: '',
+      audioUri: "",
       jobId,
     });
   };
@@ -290,51 +272,81 @@ export default function AudioInputScreen() {
   const renderModeToggle = () => (
     <View style={styles.modeToggle}>
       <Pressable
-        style={[styles.modeButton, inputMode === 'record' && styles.modeButtonActive]}
-        onPress={() => setInputMode('record')}
+        style={[
+          styles.modeButton,
+          inputMode === "record" && styles.modeButtonActive,
+        ]}
+        onPress={() => setInputMode("record")}
       >
-        <Feather 
-          name="mic" 
-          size={18} 
-          color={inputMode === 'record' ? Colors.dark.primary : Colors.dark.textSecondary} 
+        <Feather
+          name="mic"
+          size={18}
+          color={
+            inputMode === "record"
+              ? Colors.dark.primary
+              : Colors.dark.textSecondary
+          }
         />
-        <ThemedText 
-          type="small" 
-          style={[styles.modeButtonText, inputMode === 'record' && styles.modeButtonTextActive]}
+        <ThemedText
+          type="small"
+          style={[
+            styles.modeButtonText,
+            inputMode === "record" && styles.modeButtonTextActive,
+          ]}
         >
           Record
         </ThemedText>
       </Pressable>
-      
+
       <Pressable
-        style={[styles.modeButton, inputMode === 'search' && styles.modeButtonActive]}
-        onPress={() => setInputMode('search')}
+        style={[
+          styles.modeButton,
+          inputMode === "search" && styles.modeButtonActive,
+        ]}
+        onPress={() => setInputMode("search")}
       >
-        <Feather 
-          name="search" 
-          size={18} 
-          color={inputMode === 'search' ? Colors.dark.primary : Colors.dark.textSecondary} 
+        <Feather
+          name="search"
+          size={18}
+          color={
+            inputMode === "search"
+              ? Colors.dark.primary
+              : Colors.dark.textSecondary
+          }
         />
-        <ThemedText 
-          type="small" 
-          style={[styles.modeButtonText, inputMode === 'search' && styles.modeButtonTextActive]}
+        <ThemedText
+          type="small"
+          style={[
+            styles.modeButtonText,
+            inputMode === "search" && styles.modeButtonTextActive,
+          ]}
         >
           Search
         </ThemedText>
       </Pressable>
-      
+
       <Pressable
-        style={[styles.modeButton, inputMode === 'history' && styles.modeButtonActive]}
-        onPress={() => setInputMode('history')}
+        style={[
+          styles.modeButton,
+          inputMode === "history" && styles.modeButtonActive,
+        ]}
+        onPress={() => setInputMode("history")}
       >
-        <Feather 
-          name="clock" 
-          size={18} 
-          color={inputMode === 'history' ? Colors.dark.primary : Colors.dark.textSecondary} 
+        <Feather
+          name="clock"
+          size={18}
+          color={
+            inputMode === "history"
+              ? Colors.dark.primary
+              : Colors.dark.textSecondary
+          }
         />
-        <ThemedText 
-          type="small" 
-          style={[styles.modeButtonText, inputMode === 'history' && styles.modeButtonTextActive]}
+        <ThemedText
+          type="small"
+          style={[
+            styles.modeButtonText,
+            inputMode === "history" && styles.modeButtonTextActive,
+          ]}
         >
           History
         </ThemedText>
@@ -343,42 +355,67 @@ export default function AudioInputScreen() {
   );
 
   const renderRecordMode = () => (
-    <Animated.View 
+    <Animated.View
       style={styles.recordModeContainer}
       entering={FadeIn.duration(200)}
       exiting={FadeOut.duration(150)}
     >
       <View style={styles.hummingToggle}>
         <Pressable
-          style={[styles.hummingButton, !isHummingMode && styles.hummingButtonActive]}
+          style={[
+            styles.hummingButton,
+            !isHummingMode && styles.hummingButtonActive,
+          ]}
           onPress={() => setIsHummingMode(false)}
         >
-          <Feather name="radio" size={16} color={!isHummingMode ? Colors.dark.text : Colors.dark.textSecondary} />
-          <ThemedText type="small" style={!isHummingMode ? styles.hummingTextActive : styles.hummingText}>
+          <Feather
+            name="radio"
+            size={16}
+            color={
+              !isHummingMode ? Colors.dark.text : Colors.dark.textSecondary
+            }
+          />
+          <ThemedText
+            type="small"
+            style={
+              !isHummingMode ? styles.hummingTextActive : styles.hummingText
+            }
+          >
             Play Audio
           </ThemedText>
         </Pressable>
         <Pressable
-          style={[styles.hummingButton, isHummingMode && styles.hummingButtonActive]}
+          style={[
+            styles.hummingButton,
+            isHummingMode && styles.hummingButtonActive,
+          ]}
           onPress={() => setIsHummingMode(true)}
         >
-          <Feather name="music" size={16} color={isHummingMode ? Colors.dark.text : Colors.dark.textSecondary} />
-          <ThemedText type="small" style={isHummingMode ? styles.hummingTextActive : styles.hummingText}>
+          <Feather
+            name="music"
+            size={16}
+            color={isHummingMode ? Colors.dark.text : Colors.dark.textSecondary}
+          />
+          <ThemedText
+            type="small"
+            style={
+              isHummingMode ? styles.hummingTextActive : styles.hummingText
+            }
+          >
             Hum / Sing
           </ThemedText>
         </Pressable>
       </View>
 
       <WaveformVisualizer isActive={isRecording} />
-      
+
       {isRecording ? (
         <Timer seconds={recordingSeconds} maxSeconds={MAX_RECORDING_SECONDS} />
       ) : (
         <ThemedText type="small" style={styles.hint}>
-          {isHummingMode 
+          {isHummingMode
             ? "Hum or sing the melody you remember"
-            : "Tap to record 15-30 seconds of audio"
-          }
+            : "Tap to record 15-30 seconds of audio"}
         </ThemedText>
       )}
 
@@ -397,8 +434,11 @@ export default function AudioInputScreen() {
           <View style={styles.dividerLine} />
         </View>
 
-        <UploadButton onPress={handleUpload} disabled={isRecording || isProcessing} />
-        
+        <UploadButton
+          onPress={handleUpload}
+          disabled={isRecording || isProcessing}
+        />
+
         <ThemedText type="caption" style={styles.formatText}>
           Supports MP3, WAV, FLAC, M4A
         </ThemedText>
@@ -407,7 +447,7 @@ export default function AudioInputScreen() {
   );
 
   const renderSearchMode = () => (
-    <Animated.View 
+    <Animated.View
       style={styles.searchModeContainer}
       entering={SlideInUp.duration(200)}
       exiting={FadeOut.duration(150)}
@@ -417,28 +457,34 @@ export default function AudioInputScreen() {
           Find a Song
         </ThemedText>
         <ThemedText type="caption" style={styles.searchSubtitle}>
-          Type a title, paste lyrics, or describe what you're looking for
+          Type a title, paste lyrics, or describe what you are looking for
         </ThemedText>
       </View>
-      
+
       <SongSearchInput onSelectSong={handleSelectSong} />
-      
+
       <View style={styles.searchTips}>
-        <ThemedText type="small" style={styles.tipsTitle}>Tips:</ThemedText>
+        <ThemedText type="small" style={styles.tipsTitle}>
+          Tips:
+        </ThemedText>
         <View style={styles.tipItem}>
           <Feather name="music" size={14} color={Colors.dark.textSecondary} />
           <ThemedText type="caption" style={styles.tipText}>
-            "that song that goes la la la"
+            that song that goes la la la
           </ThemedText>
         </View>
         <View style={styles.tipItem}>
           <Feather name="user" size={14} color={Colors.dark.textSecondary} />
           <ThemedText type="caption" style={styles.tipText}>
-            "upbeat dance song from 2023"
+            upbeat dance song from 2023
           </ThemedText>
         </View>
         <View style={styles.tipItem}>
-          <Feather name="file-text" size={14} color={Colors.dark.textSecondary} />
+          <Feather
+            name="file-text"
+            size={14}
+            color={Colors.dark.textSecondary}
+          />
           <ThemedText type="caption" style={styles.tipText}>
             Paste partial lyrics to find the song
           </ThemedText>
@@ -448,32 +494,34 @@ export default function AudioInputScreen() {
   );
 
   const renderHistoryMode = () => (
-    <Animated.View 
+    <Animated.View
       style={styles.historyModeContainer}
       entering={FadeIn.duration(200)}
       exiting={FadeOut.duration(150)}
       key={historyKeyRef.current}
     >
-      <SongHistoryGallery 
+      <SongHistoryGallery
         onSelectSong={handleSelectFromHistory}
-        onNewSong={() => setInputMode('record')}
+        onNewSong={() => setInputMode("record")}
       />
     </Animated.View>
   );
 
   if (isProcessing) {
     return (
-      <ThemedView style={[styles.container, { paddingTop: insets.top + Spacing.xl }]}>
-        <Animated.View 
+      <ThemedView
+        style={[styles.container, { paddingTop: insets.top + Spacing.xl }]}
+      >
+        <Animated.View
           style={styles.processingContainer}
           entering={FadeIn.duration(300)}
         >
-          <AnalyzingAnimation 
+          <AnalyzingAnimation
             stage="analyzing"
             progress={processingProgress}
             message={processingMessage}
           />
-          
+
           {selectedSong ? (
             <View style={styles.selectedSongInfo}>
               <ThemedText type="body" style={styles.selectedSongTitle}>
@@ -484,8 +532,8 @@ export default function AudioInputScreen() {
               </ThemedText>
             </View>
           ) : null}
-          
-          <Pressable 
+
+          <Pressable
             style={styles.cancelButton}
             onPress={() => {
               setIsProcessing(false);
@@ -493,7 +541,9 @@ export default function AudioInputScreen() {
               setSelectedSong(null);
             }}
           >
-            <ThemedText type="small" style={styles.cancelText}>Cancel</ThemedText>
+            <ThemedText type="small" style={styles.cancelText}>
+              Cancel
+            </ThemedText>
           </Pressable>
         </Animated.View>
       </ThemedView>
@@ -502,7 +552,7 @@ export default function AudioInputScreen() {
 
   return (
     <ThemedView style={[styles.container, { paddingTop, paddingBottom }]}>
-      <ScrollView 
+      <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -520,13 +570,13 @@ export default function AudioInputScreen() {
         {renderModeToggle()}
 
         <View style={styles.modeContent}>
-          {inputMode === 'record' && renderRecordMode()}
-          {inputMode === 'search' && renderSearchMode()}
-          {inputMode === 'history' && renderHistoryMode()}
+          {inputMode === "record" && renderRecordMode()}
+          {inputMode === "search" && renderSearchMode()}
+          {inputMode === "history" && renderHistoryMode()}
         </View>
       </ScrollView>
 
-      <OnboardingOverlay 
+      <OnboardingOverlay
         onComplete={handleOnboardingComplete}
         forceShow={showOnboarding}
       />

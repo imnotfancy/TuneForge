@@ -1,32 +1,39 @@
-import axios, { AxiosError } from 'axios';
-import Constants from 'expo-constants';
-import { Platform } from 'react-native';
+import axios, { AxiosError, isAxiosError } from "axios";
+import Constants from "expo-constants";
+import { Platform } from "react-native";
 
 const getBaseUrl = () => {
-  if (Platform.OS === 'web') {
-    return 'http://localhost:3001/api';
+  if (Platform.OS === "web") {
+    return "http://localhost:3001/api";
   }
-  const debuggerHost = Constants.expoConfig?.hostUri?.split(':')[0];
+  const debuggerHost = Constants.expoConfig?.hostUri?.split(":")[0];
   if (debuggerHost) {
     return `http://${debuggerHost}:3001/api`;
   }
-  return 'http://localhost:3001/api';
+  return "http://localhost:3001/api";
 };
 
 const api = axios.create({
   baseURL: getBaseUrl(),
   timeout: 30000,
   headers: {
-    'Content-Type': 'application/json',
+    "Content-Type": "application/json",
   },
 });
 
 export interface JobStatus {
   id: string;
-  status: 'pending' | 'identifying' | 'acquiring' | 'separating' | 'generating_midi' | 'completed' | 'failed';
+  status:
+    | "pending"
+    | "identifying"
+    | "acquiring"
+    | "separating"
+    | "generating_midi"
+    | "completed"
+    | "failed";
   progress: number;
   progressMessage?: string;
-  
+
   metadata?: {
     title?: string;
     artist?: string;
@@ -35,19 +42,35 @@ export interface JobStatus {
     duration?: number;
     isrc?: string;
   };
-  
+
   audioSource?: {
     format?: string;
     service?: string;
   };
-  
+
   stems?: {
     id: string;
     type: string;
     hasMidi: boolean;
     fileSize?: number;
+    downloadUrl?: string;
+    midiUrl?: string | null;
   }[];
-  
+
+  analysis?: {
+    provider?: string;
+    key?: string | null;
+    tempo?: number | null;
+    chordProgression?: unknown;
+    fadr?: {
+      sourceAssetId?: string | null;
+      taskId?: string | null;
+      stemAssetIds?: string[];
+      midiAssetIds?: string[];
+      chordAssetIds?: string[];
+    };
+  };
+
   error?: string;
   expiresAt?: string;
   createdAt: string;
@@ -71,7 +94,7 @@ export interface TrackInfo {
 export interface StemAsset {
   id: string;
   name: string;
-  type: 'vocals' | 'drums' | 'bass' | 'melodies' | 'instrumental';
+  type: "vocals" | "drums" | "bass" | "melodies" | "instrumental";
   url: string;
   midiUrl?: string;
   duration: number;
@@ -87,7 +110,12 @@ export interface JobResult {
 }
 
 export interface CreateJobRequest {
-  sourceType: 'spotify_url' | 'audio_url' | 'isrc';
+  sourceType:
+    | "spotify_url"
+    | "audio_url"
+    | "isrc"
+    | "spotify_id"
+    | "apple_music_id";
   sourceValue: string;
   title?: string;
   artist?: string;
@@ -108,7 +136,13 @@ export interface SongSuggestion {
   albumArt?: string;
   isrc?: string;
   confidence: number;
-  source: 'llm' | 'acrcloud' | 'musicbrainz' | 'itunes' | 'spotify' | 'songstats';
+  source:
+    | "llm"
+    | "acrcloud"
+    | "musicbrainz"
+    | "itunes"
+    | "spotify"
+    | "songstats";
   spotifyId?: string;
   appleMusicId?: string;
 }
@@ -127,18 +161,24 @@ export interface HummingSearchResult {
 }
 
 class TuneForgeAPI {
-  async healthCheck(): Promise<{ status: string; timestamp: string; version: string }> {
+  async healthCheck(): Promise<{
+    status: string;
+    timestamp: string;
+    version: string;
+  }> {
     try {
-      const response = await api.get('/health');
+      const response = await api.get("/health");
       return response.data;
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
-  async createJob(data: CreateJobRequest): Promise<{ id: string; status: string; createdAt: string }> {
+  async createJob(
+    data: CreateJobRequest,
+  ): Promise<{ id: string; status: string; createdAt: string }> {
     try {
-      const response = await api.post('/jobs', data);
+      const response = await api.post("/jobs", data);
       return response.data;
     } catch (error) {
       throw this.handleError(error);
@@ -147,38 +187,38 @@ class TuneForgeAPI {
 
   async uploadAudioAndCreateJob(
     audioUri: string,
-    metadata?: { title?: string; artist?: string; album?: string }
+    metadata?: { title?: string; artist?: string; album?: string },
   ): Promise<{ id: string; status: string; createdAt: string }> {
     try {
       const formData = new FormData();
-      
-      const filename = audioUri.split('/').pop() || 'audio.mp3';
+
+      const filename = audioUri.split("/").pop() || "audio.mp3";
       const match = /\.(\w+)$/.exec(filename);
-      const mimeType = match ? `audio/${match[1]}` : 'audio/mpeg';
-      
-      formData.append('audio', {
+      const mimeType = match ? `audio/${match[1]}` : "audio/mpeg";
+
+      formData.append("audio", {
         uri: audioUri,
         name: filename,
         type: mimeType,
       } as unknown as Blob);
-      
+
       if (metadata?.title) {
-        formData.append('title', metadata.title);
+        formData.append("title", metadata.title);
       }
       if (metadata?.artist) {
-        formData.append('artist', metadata.artist);
+        formData.append("artist", metadata.artist);
       }
       if (metadata?.album) {
-        formData.append('album', metadata.album);
+        formData.append("album", metadata.album);
       }
 
-      const response = await api.post('/jobs/upload', formData, {
+      const response = await api.post("/jobs/upload", formData, {
         headers: {
-          'Content-Type': 'multipart/form-data',
+          "Content-Type": "multipart/form-data",
         },
         timeout: 60000,
       });
-      
+
       return response.data;
     } catch (error) {
       throw this.handleError(error);
@@ -188,7 +228,7 @@ class TuneForgeAPI {
   async getJobStatus(jobId: string): Promise<JobStatus> {
     try {
       const response = await api.get(`/jobs/${jobId}`);
-      return response.data.job;
+      return response.data;
     } catch (error) {
       throw this.handleError(error);
     }
@@ -198,100 +238,98 @@ class TuneForgeAPI {
     jobId: string,
     onProgress?: (status: JobStatus) => void,
     intervalMs: number = 2000,
-    maxAttempts: number = 150
+    maxAttempts: number = 150,
   ): Promise<JobStatus> {
     let attempts = 0;
-    
+
     return new Promise((resolve, reject) => {
       const poll = async () => {
         try {
           attempts++;
           const status = await this.getJobStatus(jobId);
-          
+
           if (onProgress) {
             onProgress(status);
           }
-          
-          if (status.status === 'completed') {
+
+          if (status.status === "completed") {
             resolve(status);
             return;
           }
-          
-          if (status.status === 'failed') {
-            reject(new Error(status.error || 'Job failed'));
+
+          if (status.status === "failed") {
+            reject(new Error(status.error || "Job failed"));
             return;
           }
-          
+
           if (attempts >= maxAttempts) {
-            reject(new Error('Job polling timeout exceeded'));
+            reject(new Error("Job polling timeout exceeded"));
             return;
           }
-          
+
           setTimeout(poll, intervalMs);
         } catch (error) {
           reject(error);
         }
       };
-      
+
       poll();
     });
   }
 
-  async getAssetUrl(assetId: string): Promise<string> {
-    try {
-      const response = await api.get(`/jobs/assets/${assetId}/url`);
-      return response.data.url;
-    } catch (error) {
-      throw this.handleError(error);
-    }
-  }
-
-  async cancelJob(jobId: string): Promise<void> {
-    try {
-      await api.post(`/jobs/${jobId}/cancel`);
-    } catch (error) {
-      throw this.handleError(error);
-    }
-  }
-
-  async getRecentJobs(limit: number = 10): Promise<{
-    id: string;
-    status: string;
-    title?: string;
-    artist?: string;
-    album?: string;
-    albumArt?: string;
-    progress: number;
-    progressMessage?: string;
-    createdAt: string;
-    updatedAt: string;
-    stems?: Array<{
+  async getRecentJobs(limit: number = 10): Promise<
+    {
       id: string;
-      type: string;
-      stemType: string | null;
-      hasMidi: boolean | null;
-    }>;
-  }[]> {
+      status: string;
+      title?: string;
+      artist?: string;
+      album?: string;
+      albumArt?: string;
+      progress: number;
+      progressMessage?: string;
+      createdAt: string;
+      updatedAt: string;
+      stems?: {
+        id: string;
+        type: string;
+        stemType: string | null;
+        hasMidi: boolean | null;
+      }[];
+    }[]
+  > {
     try {
-      const response = await api.get('/jobs', { params: { limit } });
+      const response = await api.get("/jobs", { params: { limit } });
       return response.data?.jobs || [];
     } catch (error) {
-      console.error('Failed to fetch recent jobs:', error);
+      console.error("Failed to fetch recent jobs:", error);
       return [];
     }
   }
-  
-  getStemDownloadUrl(jobId: string, stemType: string, format: 'audio' | 'midi' = 'audio'): string {
+
+  getStemDownloadUrl(
+    jobId: string,
+    stemType: string,
+    format: "audio" | "midi" = "audio",
+  ): string {
     const baseUrl = getBaseUrl();
-    return `${baseUrl}/jobs/${jobId}/stems/${stemType}${format === 'midi' ? '?format=midi' : ''}`;
+    return `${baseUrl}/jobs/${jobId}/stems/${stemType}${format === "midi" ? "?format=midi" : ""}`;
+  }
+
+  toAbsoluteUrl(url: string): string {
+    if (/^https?:\/\//i.test(url)) {
+      return url;
+    }
+
+    const baseUrl = getBaseUrl().replace(/\/api$/, "");
+    return `${baseUrl}${url.startsWith("/") ? url : `/${url}`}`;
   }
 
   async searchByText(
-    query: string, 
-    type: 'title' | 'lyrics' | 'description' = 'title'
+    query: string,
+    type: "title" | "lyrics" | "description" = "title",
   ): Promise<TextSearchResult> {
     try {
-      const response = await api.post('/search/text', { query, type });
+      const response = await api.post("/search/text", { query, type });
       return response.data;
     } catch (error) {
       throw this.handleError(error);
@@ -300,28 +338,38 @@ class TuneForgeAPI {
 
   async searchByHumming(audioBuffer: string): Promise<HummingSearchResult> {
     try {
-      const response = await api.post('/search/humming', { audioBuffer });
+      const response = await api.post("/search/humming", { audioBuffer });
       return response.data;
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
-  async searchBySpotify(query: string, limit: number = 10): Promise<TextSearchResult> {
+  async searchBySpotify(
+    query: string,
+    limit: number = 10,
+  ): Promise<TextSearchResult> {
     try {
-      const response = await api.get('/search/spotify', { params: { query, limit } });
+      const response = await api.get("/search/spotify", {
+        params: { query, limit },
+      });
       return response.data;
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
-  async searchUnified(query: string, limit: number = 10): Promise<TextSearchResult> {
+  async searchUnified(
+    query: string,
+    limit: number = 10,
+  ): Promise<TextSearchResult> {
     try {
-      const response = await api.get('/search/unified', { params: { query, limit } });
+      const response = await api.get("/search/unified", {
+        params: { query, limit },
+      });
       return {
         query: response.data.query,
-        type: 'unified',
+        type: "unified",
         suggestions: response.data.suggestions,
         searchId: response.data.searchId,
       };
@@ -330,12 +378,17 @@ class TuneForgeAPI {
     }
   }
 
-  async searchByItunes(query: string, limit: number = 10): Promise<TextSearchResult> {
+  async searchByItunes(
+    query: string,
+    limit: number = 10,
+  ): Promise<TextSearchResult> {
     try {
-      const response = await api.get('/search/itunes', { params: { query, limit } });
+      const response = await api.get("/search/itunes", {
+        params: { query, limit },
+      });
       return {
         query,
-        type: 'itunes',
+        type: "itunes",
         suggestions: response.data.suggestions,
         searchId: `itunes-${Date.now()}`,
       };
@@ -346,11 +399,16 @@ class TuneForgeAPI {
 
   async createJobFromISRC(
     isrc: string,
-    metadata?: { title?: string; artist?: string; album?: string; albumArt?: string }
+    metadata?: {
+      title?: string;
+      artist?: string;
+      album?: string;
+      albumArt?: string;
+    },
   ): Promise<{ id: string; status: string; createdAt: string }> {
     try {
-      const response = await api.post('/jobs', {
-        sourceType: 'isrc',
+      const response = await api.post("/jobs", {
+        sourceType: "isrc",
         sourceValue: isrc,
         ...metadata,
       });
@@ -362,11 +420,16 @@ class TuneForgeAPI {
 
   async createJobFromSpotifyId(
     spotifyId: string,
-    metadata?: { title?: string; artist?: string; album?: string; albumArt?: string }
+    metadata?: {
+      title?: string;
+      artist?: string;
+      album?: string;
+      albumArt?: string;
+    },
   ): Promise<{ id: string; status: string; createdAt: string }> {
     try {
-      const response = await api.post('/jobs', {
-        sourceType: 'spotify_id',
+      const response = await api.post("/jobs", {
+        sourceType: "spotify_id",
         sourceValue: spotifyId,
         ...metadata,
       });
@@ -378,11 +441,16 @@ class TuneForgeAPI {
 
   async createJobFromAppleMusicId(
     appleMusicId: string,
-    metadata?: { title?: string; artist?: string; album?: string; albumArt?: string }
+    metadata?: {
+      title?: string;
+      artist?: string;
+      album?: string;
+      albumArt?: string;
+    },
   ): Promise<{ id: string; status: string; createdAt: string }> {
     try {
-      const response = await api.post('/jobs', {
-        sourceType: 'apple_music_id',
+      const response = await api.post("/jobs", {
+        sourceType: "apple_music_id",
         sourceValue: appleMusicId,
         ...metadata,
       });
@@ -393,7 +461,7 @@ class TuneForgeAPI {
   }
 
   async createJobFromSong(
-    song: SongSuggestion
+    song: SongSuggestion,
   ): Promise<{ id: string; status: string; createdAt: string }> {
     const metadata = {
       title: song.title,
@@ -405,48 +473,55 @@ class TuneForgeAPI {
     if (song.isrc) {
       return this.createJobFromISRC(song.isrc, metadata);
     }
-    
+
     if (song.spotifyId) {
       return this.createJobFromSpotifyId(song.spotifyId, metadata);
     }
-    
+
     if (song.appleMusicId) {
       return this.createJobFromAppleMusicId(song.appleMusicId, metadata);
     }
 
-    throw { message: 'No valid identifier found for this song', code: 'NO_IDENTIFIER' };
+    throw {
+      message: "No valid identifier found for this song",
+      code: "NO_IDENTIFIER",
+    };
   }
 
   private handleError(error: unknown): ApiError {
-    if (axios.isAxiosError(error)) {
-      const axiosError = error as AxiosError<{ error: string; details?: unknown }>;
-      
+    if (isAxiosError(error)) {
+      const axiosError = error as AxiosError<{
+        error: string;
+        details?: unknown;
+      }>;
+
       if (axiosError.response) {
         return {
-          message: axiosError.response.data?.error || 'Server error',
+          message: axiosError.response.data?.error || "Server error",
           code: `HTTP_${axiosError.response.status}`,
           details: axiosError.response.data?.details,
         };
       }
-      
-      if (axiosError.code === 'ECONNABORTED') {
+
+      if (axiosError.code === "ECONNABORTED") {
         return {
-          message: 'Request timeout - the server took too long to respond',
-          code: 'TIMEOUT',
+          message: "Request timeout - the server took too long to respond",
+          code: "TIMEOUT",
         };
       }
-      
-      if (axiosError.code === 'ERR_NETWORK') {
+
+      if (axiosError.code === "ERR_NETWORK") {
         return {
-          message: 'Network error - please check your connection',
-          code: 'NETWORK_ERROR',
+          message: "Network error - please check your connection",
+          code: "NETWORK_ERROR",
         };
       }
     }
-    
+
     return {
-      message: error instanceof Error ? error.message : 'An unexpected error occurred',
-      code: 'UNKNOWN',
+      message:
+        error instanceof Error ? error.message : "An unexpected error occurred",
+      code: "UNKNOWN",
     };
   }
 }

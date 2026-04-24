@@ -9,17 +9,20 @@ TuneForge is a full-stack mobile application that enables users to identify song
 > **Development Phase**: Core infrastructure complete. Provider integrations require API keys.
 
 ### Implemented
+
 - Multi-source song search (iTunes, Spotify, MusicBrainz, OpenAI-powered)
 - Humming/singing recognition via ACRCloud
 - Cross-platform track ID resolution via Odesli/song.link
 - Job processing pipeline with status tracking
 - Audio file upload with format validation
 - Database schema for jobs, assets, and provider configs
+- Provider-backed upload processing path for user-owned audio
+- Fadr-backed stem/MIDI processing scaffold with key/tempo/chord metadata capture
 
 ### Requires Configuration
-- FLAC acquisition (Tidal/Deezer/Qobuz API credentials needed)
-- Stem separation (LALAL.AI/Fadr API credentials needed)
-- MIDI generation (Fadr/Basic Pitch integration pending)
+
+- Fadr processing (`FADR_API_KEY`) for v1 upload-to-stems/MIDI processing
+- Optional catalog/search providers for metadata enrichment only
 
 ## Features
 
@@ -34,10 +37,11 @@ TuneForge is a full-stack mobile application that enables users to identify song
   - Odesli/song.link for cross-platform ID enrichment
   - Automatic ISRC, Spotify, Apple Music, Tidal, Deezer, Qobuz ID lookup
 
-- **Audio Processing Pipeline** *(requires provider API keys)*
-  - FLAC acquisition from streaming services (Tidal, Deezer, Qobuz)
-  - 5-stem separation (Vocals, Drums, Bass, Melodies, Instrumental)
-  - MIDI generation for melodic stems
+- **Audio Processing Pipeline** _(requires `FADR_API_KEY`)_
+  - User-owned upload/recording input
+  - 5-stem separation (Vocals, Drums, Bass, Melody, Instrumental)
+  - MIDI generation for available stem parts
+  - Key, tempo, and chord metadata when returned by Fadr
 
 - **User Experience**
   - Intuitive onboarding for first-time users
@@ -75,15 +79,16 @@ TuneForge is a full-stack mobile application that enables users to identify song
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|------------|
-| Mobile App | Expo React Native (SDK 54) |
-| Navigation | React Navigation 7+ |
-| Backend | Node.js + Express |
-| Database | PostgreSQL + Drizzle ORM |
-| Job Processing | In-process async (BullMQ optional) |
-| Track ID | iTunes, Spotify, MusicBrainz, Odesli |
-| FLAC Source | Tidal, Deezer, Qobuz APIs *(requires keys)* |
+| Layer               | Technology                                                        |
+| ------------------- | ----------------------------------------------------------------- |
+| Mobile App          | Expo React Native (SDK 54)                                        |
+| Navigation          | React Navigation 7+                                               |
+| Backend             | Node.js + Express                                                 |
+| Database            | PostgreSQL + Drizzle ORM                                          |
+| Job Processing      | In-process async (BullMQ optional)                                |
+| Track ID            | iTunes, Spotify, MusicBrainz, Odesli                              |
+| Processing Provider | Fadr API for v1 stems, MIDI, key, tempo, chords                   |
+| Catalog Context     | iTunes, Spotify, MusicBrainz, Odesli _(metadata only by default)_ |
 
 ## Getting Started
 
@@ -97,21 +102,24 @@ TuneForge is a full-stack mobile application that enables users to identify song
 ### Installation
 
 1. **Clone the repository**
+
    ```bash
    git clone https://github.com/imnotfancy/TuneForge.git
    cd TuneForge
    ```
 
 2. **Install dependencies**
+
    ```bash
    npm install
    ```
 
 3. **Set up environment variables**
+
    ```bash
    # Required
    DATABASE_URL=postgresql://user:password@host:5432/tuneforge
-   
+
    # Optional - for enhanced features
    REDIS_URL=redis://localhost:6379
    OPENAI_API_KEY=sk-...           # Text search suggestions
@@ -120,11 +128,13 @@ TuneForge is a full-stack mobile application that enables users to identify song
    ```
 
 4. **Initialize the database**
+
    ```bash
    npm run db:push
    ```
 
 5. **Start the development servers**
+
    ```bash
    npm run dev
    ```
@@ -136,21 +146,21 @@ TuneForge is a full-stack mobile application that enables users to identify song
 
 ### Search Endpoints
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/search/text` | Text-based song search |
-| POST | `/api/search/humming` | Humming/singing recognition |
-| GET | `/api/search/isrc/:isrc` | Lookup by ISRC code |
+| Method | Endpoint                 | Description                 |
+| ------ | ------------------------ | --------------------------- |
+| POST   | `/api/search/text`       | Text-based song search      |
+| POST   | `/api/search/humming`    | Humming/singing recognition |
+| GET    | `/api/search/isrc/:isrc` | Lookup by ISRC code         |
 
 ### Job Endpoints
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/jobs` | List recent jobs |
-| POST | `/api/jobs` | Create new job |
-| POST | `/api/jobs/upload` | Upload audio file |
-| GET | `/api/jobs/:id` | Get job status |
-| GET | `/api/jobs/:id/stems/:type` | Download stem |
+| Method | Endpoint                    | Description       |
+| ------ | --------------------------- | ----------------- |
+| GET    | `/api/jobs`                 | List recent jobs  |
+| POST   | `/api/jobs`                 | Create new job    |
+| POST   | `/api/jobs/upload`          | Upload audio file |
+| GET    | `/api/jobs/:id`             | Get job status    |
+| GET    | `/api/jobs/:id/stems/:type` | Download stem     |
 
 ## Context Generation Pipeline
 
@@ -194,17 +204,17 @@ TuneForge progressively enriches minimal input into rich track metadata:
        • isrc: "GBUM71029604"
          │
          ▼
-3. Acquire FLAC Audio (SpotiFLAC Strategy)
-   └── Try by platform ID: Tidal → Deezer → Qobuz
-   └── Fallback: ISRC search on each provider
+3. Acquire Audio
+   └── V1 default: use uploaded/recorded audio directly
+   └── Catalog acquisition is disabled unless ENABLE_CATALOG_ACQUISITION=true
          │
          ▼
-4. Separate Stems *(requires provider API)*
-   └── Vocals, Drums, Bass, Melodies, Instrumental
+4. Separate Stems *(requires FADR_API_KEY)*
+   └── Vocals, Drums, Bass, Melody, Instrumental
          │
          ▼
-5. Generate MIDI *(requires provider API)*
-   └── For Vocals, Bass, Melodies stems
+5. Persist MIDI + Analysis
+   └── Store MIDI paths, key, tempo, chords, and provider task IDs
          │
          ▼
 6. Complete → Assets available for 24 hours
@@ -212,28 +222,28 @@ TuneForge progressively enriches minimal input into rich track metadata:
 
 ## Provider Configuration
 
-### FLAC Acquisition Providers
+### Catalog Acquisition Providers _(disabled by default)_
 
-| Provider | Priority | Description |
-|----------|----------|-------------|
-| Tidal | 1 | Hi-Res FLAC, MQA |
-| Deezer | 2 | CD-quality FLAC |
-| Qobuz | 3 | Hi-Res up to 24-bit/192kHz |
+| Provider | Priority | Description                |
+| -------- | -------- | -------------------------- |
+| Tidal    | 1        | Hi-Res FLAC, MQA           |
+| Deezer   | 2        | CD-quality FLAC            |
+| Qobuz    | 3        | Hi-Res up to 24-bit/192kHz |
 
 ### Stem Separation Providers
 
-| Provider | Description |
-|----------|-------------|
-| LALAL.AI | Best vocal isolation |
-| Fadr | Full stem suite |
-| UVR5 | Local processing |
+| Provider | Description                                               |
+| -------- | --------------------------------------------------------- |
+| Fadr     | V1 primary provider for stems, MIDI, and musical analysis |
+| LALAL.AI | Optional stem-only fallback                               |
+| UVR5     | Local processing                                          |
 
 ### MIDI Generation Providers
 
-| Provider | Description |
-|----------|-------------|
-| Fadr | Melodies, chords, drums |
-| Basic Pitch | Open-source, local |
+| Provider    | Description             |
+| ----------- | ----------------------- |
+| Fadr        | Melodies, chords, drums |
+| Basic Pitch | Open-source, local      |
 
 ## Project Structure
 

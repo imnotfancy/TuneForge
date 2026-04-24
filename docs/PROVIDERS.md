@@ -8,8 +8,8 @@ TuneForge uses a modular provider system that allows you to configure different 
 
 1. **Track Identification** - Identify songs from audio or metadata
 2. **FLAC Acquisition** - Download high-quality audio files
-3. **Stem Separation** - Split audio into individual stems
-4. **MIDI Generation** - Convert audio to MIDI
+3. **Stem Separation + MIDI** - Split uploaded audio into stems and MIDI
+4. **MIDI Fallbacks** - Optional fallback transcription when provider MIDI is unavailable
 
 ---
 
@@ -22,10 +22,11 @@ TuneForge uses a modular provider system that allows you to configure different 
 **Setup**: No API key required.
 
 **Usage**:
-```typescript
-import { searchTracks } from './services/itunes';
 
-const results = await searchTracks('Bohemian Rhapsody', 10);
+```typescript
+import { searchTracks } from "./services/itunes";
+
+const results = await searchTracks("Bohemian Rhapsody", 10);
 ```
 
 **Rate Limits**: ~20 requests per minute
@@ -39,16 +40,18 @@ const results = await searchTracks('Bohemian Rhapsody', 10);
 **Setup**: No API key required for basic usage.
 
 **Usage**:
-```typescript
-import { lookupBySpotifyId, extractTrackInfo } from './services/songlink';
 
-const response = await lookupBySpotifyId('7tFiyTwD0nx5a1eklYtX2J');
+```typescript
+import { lookupBySpotifyId, extractTrackInfo } from "./services/songlink";
+
+const response = await lookupBySpotifyId("7tFiyTwD0nx5a1eklYtX2J");
 const trackInfo = extractTrackInfo(response);
 // trackInfo.deezerId = "568115892"
 // trackInfo.tidalId = "36737274"
 ```
 
-**Rate Limits**: 
+**Rate Limits**:
+
 - 10 requests per minute
 - Recommended 7-second delay between requests
 
@@ -59,25 +62,28 @@ const trackInfo = extractTrackInfo(response);
 **Description**: Industry-leading audio recognition for humming, singing, and audio fingerprinting.
 
 **Setup**:
+
 1. Create account at [ACRCloud Console](https://console.acrcloud.com/)
 2. Create a project with "Humming Search" enabled
 3. Get Access Key and Access Secret
 
 **Environment Variables**:
+
 ```bash
 ACRCLOUD_ACCESS_KEY=your_access_key
 ACRCLOUD_ACCESS_SECRET=your_access_secret
 ```
 
-**Rate Limits**: 
+**Rate Limits**:
+
 - Free tier: 1,000 requests/day
 - Paid plans available for higher volume
 
 ---
 
-## FLAC Acquisition Providers
+## Catalog Acquisition Providers
 
-These providers download high-quality FLAC audio files from streaming services.
+These providers are retained for future metadata/catalog experiments, but TuneForge v1 disables commercial catalog acquisition by default. Set `ENABLE_CATALOG_ACQUISITION=true` only for internal research and only where platform terms allow it.
 
 ### Tidal
 
@@ -86,10 +92,12 @@ These providers download high-quality FLAC audio files from streaming services.
 **Priority**: 1 (highest)
 
 **Setup**:
+
 1. Obtain Tidal API credentials
 2. Configure in Settings or environment
 
 **Environment Variables**:
+
 ```bash
 TIDAL_CLIENT_ID=your_client_id
 TIDAL_CLIENT_SECRET=your_client_secret
@@ -106,10 +114,12 @@ TIDAL_CLIENT_SECRET=your_client_secret
 **Priority**: 2
 
 **Setup**:
+
 1. Obtain Deezer API credentials
 2. Configure in Settings or environment
 
 **Environment Variables**:
+
 ```bash
 DEEZER_ARL=your_arl_token
 ```
@@ -125,10 +135,12 @@ DEEZER_ARL=your_arl_token
 **Priority**: 3
 
 **Setup**:
+
 1. Obtain Qobuz API credentials
 2. Configure in Settings or environment
 
 **Environment Variables**:
+
 ```bash
 QOBUZ_APP_ID=your_app_id
 QOBUZ_APP_SECRET=your_app_secret
@@ -145,6 +157,7 @@ QOBUZ_APP_SECRET=your_app_secret
 **Description**: Best-in-class vocal isolation using AI.
 
 **Stems Available**:
+
 - Vocals
 - Instrumental
 - Drums
@@ -155,10 +168,12 @@ QOBUZ_APP_SECRET=your_app_secret
 - Synthesizer
 
 **Setup**:
+
 1. Create account at [LALAL.AI](https://www.lalal.ai/)
 2. Get API key from dashboard
 
 **Environment Variables**:
+
 ```bash
 LALAL_API_KEY=your_api_key
 ```
@@ -169,9 +184,10 @@ LALAL_API_KEY=your_api_key
 
 ### Fadr
 
-**Description**: Full stem separation suite with MIDI extraction.
+**Description**: TuneForge v1 primary processing provider. Fadr receives user-uploaded audio, creates source assets, runs stem analysis, and returns stems, MIDI, key, tempo, and chord metadata when available.
 
 **Stems Available**:
+
 - Vocals
 - Drums
 - Bass
@@ -179,15 +195,33 @@ LALAL_API_KEY=your_api_key
 - Instruments
 
 **Setup**:
+
 1. Create account at [Fadr](https://fadr.com/)
 2. Get API credentials
 
 **Environment Variables**:
+
 ```bash
 FADR_API_KEY=your_api_key
+FADR_API_URL=https://api.fadr.com
+FADR_POLL_INTERVAL_MS=5000
+FADR_POLL_TIMEOUT_MS=600000
 ```
 
-**Features**: Also provides MIDI generation
+**TuneForge Flow**:
+
+1. `POST /assets/upload2` for a presigned upload URL
+2. Upload audio bytes to the returned URL
+3. `POST /assets` to create the Fadr asset
+4. `POST /assets/analyze/stem` with `stemType: "main"`
+5. Poll the task until `status.complete` is true
+6. Download returned stem and MIDI assets into local storage
+
+**Features**:
+
+- Stem separation
+- MIDI assets when returned by Fadr
+- Key, tempo, chord, and provider task metadata
 
 ---
 
@@ -196,6 +230,7 @@ FADR_API_KEY=your_api_key
 **Description**: Open-source, local processing. No API required.
 
 **Stems Available**:
+
 - Vocals
 - Instrumental
 - Drums
@@ -203,16 +238,19 @@ FADR_API_KEY=your_api_key
 - Other
 
 **Setup**:
+
 1. UVR5 must be installed locally
 2. Configure path in settings
 
 **Environment Variables**:
+
 ```bash
 UVR5_PATH=/path/to/uvr5
 UVR5_MODEL=MDX23C
 ```
 
-**Advantages**: 
+**Advantages**:
+
 - Free
 - No rate limits
 - Privacy (local processing)
@@ -226,6 +264,7 @@ UVR5_MODEL=MDX23C
 **Description**: High-quality MIDI extraction for melodies, chords, and drums.
 
 **MIDI Types**:
+
 - Melody (single notes)
 - Chords
 - Bass line
@@ -235,16 +274,18 @@ UVR5_MODEL=MDX23C
 
 ---
 
-### Basic Pitch (Spotify)
+### Basic Pitch
 
 **Description**: Open-source polyphonic MIDI transcription.
 
 **Setup**:
+
 ```bash
 pip install basic-pitch
 ```
 
 **Usage**:
+
 ```python
 from basic_pitch.inference import predict
 from basic_pitch import ICASSP_2022_MODEL_PATH
@@ -253,7 +294,14 @@ model_output, midi_data, note_events = predict(audio_path)
 midi_data.write('output.mid')
 ```
 
+**TuneForge Status**:
+
+- Not used by default in v1.
+- The public Spotify Basic Pitch demo endpoint is not used as a production dependency.
+- Configure a first-party/local `BASIC_PITCH_API_URL` and `ENABLE_MIDI_FALLBACK=true` if you later add a private Basic Pitch worker.
+
 **Advantages**:
+
 - Free and open-source
 - Local processing
 - Good for melodic content
@@ -262,32 +310,24 @@ midi_data.write('output.mid')
 
 ## Provider Priority System
 
-The system attempts providers in priority order and falls back to the next if one fails:
+TuneForge v1 prioritizes Fadr for upload processing. Catalog-acquisition fallback is disabled unless `ENABLE_CATALOG_ACQUISITION=true`.
 
 ```
-1. Primary Provider (e.g., Tidal)
+1. Primary Processing Provider (Fadr)
    └── Success? → Use result
-   └── Fail? → Try next
-   
-2. Secondary Provider (e.g., Deezer)
+   └── Fail? → Mark job failed with provider error
+
+2. Optional Stem Fallback (LALAL.AI)
    └── Success? → Use result
-   └── Fail? → Try next
-   
-3. Tertiary Provider (e.g., Qobuz)
-   └── Success? → Use result
-   └── Fail? → Error with message
+   └── MIDI may be unavailable
+
+3. Optional MIDI Fallback
+   └── Requires ENABLE_MIDI_FALLBACK=true and a configured private worker
 ```
 
-## Configuration via Settings
+## Configuration
 
-Users can configure providers through the Settings screen:
-
-1. Open Settings (gear icon)
-2. Navigate to "Providers" section
-3. Enter API keys for each service
-4. Save settings
-
-Settings are stored securely and persist between sessions.
+TuneForge v1 uses server-owned provider credentials through environment variables. The mobile Settings screen can remain as a UI concept, but backend processing reads `FADR_API_KEY`, `LALAL_API_KEY`, and fallback settings from the server environment.
 
 ## Error Handling
 
@@ -303,6 +343,7 @@ interface DownloadResult {
 ```
 
 Common errors:
+
 - `Provider not configured` - Missing API key
 - `Track not found` - Song not available on platform
 - `Rate limit exceeded` - Too many requests

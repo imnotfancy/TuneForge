@@ -1,8 +1,16 @@
 import React, { useState } from "react";
-import { StyleSheet, View, Pressable, Alert, Platform, Share } from "react-native";
+import {
+  StyleSheet,
+  View,
+  Pressable,
+  Alert,
+  Platform,
+  Share,
+} from "react-native";
 import { useRoute, RouteProp, useNavigation } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -13,7 +21,16 @@ import { RootStackParamList } from "@/navigation/RootStackNavigator";
 
 type RouteType = RouteProp<RootStackParamList, "Export">;
 
-const formatStemName = (type: string) => type.charAt(0).toUpperCase() + type.slice(1);
+const formatStemName = (type: string) =>
+  type.charAt(0).toUpperCase() + type.slice(1);
+const sanitizeFilename = (name: string) => name.replace(/[^a-z0-9_.-]+/gi, "_");
+
+interface DownloadTarget {
+  id: string;
+  name: string;
+  url: string;
+  mimeType: string;
+}
 
 export default function ExportScreen() {
   const route = useRoute<RouteType>();
@@ -23,33 +40,79 @@ export default function ExportScreen() {
   const title = metadata?.title || "Unknown Track";
   const artist = metadata?.artist || "Unknown Artist";
 
-  const [downloadedStems, setDownloadedStems] = useState<Set<string>>(new Set());
+  const [downloadedStems, setDownloadedStems] = useState<Set<string>>(
+    new Set(),
+  );
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [isDownloadingAll, setIsDownloadingAll] = useState(false);
 
-  const handleDownloadStem = async (stemId: string, name: string) => {
-    if (downloadedStems.has(stemId)) return;
+  const handleDownloadTarget = async (target: DownloadTarget) => {
+    if (downloadedStems.has(target.id)) return;
 
-    setDownloadingId(stemId);
+    setDownloadingId(target.id);
 
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    try {
+      if (Platform.OS === "web") {
+        if (typeof window !== "undefined") {
+          window.open(target.url, "_blank");
+        }
+      } else {
+        const documentDirectory = FileSystem.documentDirectory;
+        if (!documentDirectory) {
+          throw new Error("Device document directory is unavailable");
+        }
 
-    if (Platform.OS !== "web") {
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        const localUri = `${documentDirectory}${sanitizeFilename(target.name)}`;
+        const result = await FileSystem.downloadAsync(target.url, localUri);
+        const isAvailable = await Sharing.isAvailableAsync();
+        if (isAvailable) {
+          await Sharing.shareAsync(result.uri, {
+            mimeType: target.mimeType,
+            dialogTitle: target.name,
+          });
+        }
+      }
+
+      if (Platform.OS !== "web") {
+        await Haptics.notificationAsync(
+          Haptics.NotificationFeedbackType.Success,
+        );
+      }
+
+      setDownloadedStems((prev) => new Set([...prev, target.id]));
+    } catch (error) {
+      console.error("Download error:", error);
+      Alert.alert("Download Error", `Could not download ${target.name}.`);
+    } finally {
+      setDownloadingId(null);
     }
+  };
 
-    setDownloadedStems((prev) => new Set([...prev, stemId]));
-    setDownloadingId(null);
+  const getDownloadTargets = (): DownloadTarget[] => {
+    const stemTargets = stems.map((stem) => ({
+      id: stem.id,
+      name: `${formatStemName(stem.type)}.wav`,
+      url: stem.url,
+      mimeType: "audio/wav",
+    }));
 
-    Alert.alert("Downloaded", `${name} has been saved to your device.`);
+    const midiTargets = stems
+      .filter((stem) => stem.hasMidi && stem.midiUrl)
+      .map((stem) => ({
+        id: `midi-${stem.id}`,
+        name: `${formatStemName(stem.type)}.mid`,
+        url: stem.midiUrl as string,
+        mimeType: "audio/midi",
+      }));
+
+    return [...stemTargets, ...midiTargets];
   };
 
   const handleDownloadAll = async () => {
     setIsDownloadingAll(true);
 
-    for (const stem of stems) {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      setDownloadedStems((prev) => new Set([...prev, stem.id, `midi-${stem.id}`]));
+    for (const target of getDownloadTargets()) {
+      await handleDownloadTarget(target);
     }
 
     if (Platform.OS !== "web") {
@@ -57,12 +120,14 @@ export default function ExportScreen() {
     }
 
     setIsDownloadingAll(false);
-    Alert.alert("Downloaded", "All stems and MIDI files have been saved to your device.");
   };
 
   const handleShare = async () => {
     if (Platform.OS === "web") {
-      Alert.alert("Share", "Share functionality is not available on web. Please use Expo Go on your mobile device.");
+      Alert.alert(
+        "Share",
+        "Share functionality is not available on web. Please use Expo Go on your mobile device.",
+      );
       return;
     }
 
@@ -97,13 +162,20 @@ export default function ExportScreen() {
         disabled={isDownloadingAll}
         style={({ pressed }) => [
           styles.downloadAllButton,
-          { opacity: pressed ? 0.9 : 1, transform: [{ scale: pressed ? 0.98 : 1 }] },
+          {
+            opacity: pressed ? 0.9 : 1,
+            transform: [{ scale: pressed ? 0.98 : 1 }],
+          },
         ]}
       >
-        <Feather name="download-cloud" size={24} color={Colors.dark.buttonText} />
+        <Feather
+          name="download-cloud"
+          size={24}
+          color={Colors.dark.buttonText}
+        />
         <View style={styles.downloadAllText}>
           <ThemedText type="bodyLarge" style={styles.downloadAllTitle}>
-            Download All as ZIP
+            Download Available Files
           </ThemedText>
           <ThemedText type="caption" style={styles.downloadAllSubtitle}>
             {stems.length} stems + {stemsWithMidi.length} MIDI files
@@ -124,7 +196,14 @@ export default function ExportScreen() {
               fileSize="~8.2 MB"
               isDownloading={downloadingId === stem.id}
               isDownloaded={downloadedStems.has(stem.id)}
-              onDownload={() => handleDownloadStem(stem.id, formatStemName(stem.type))}
+              onDownload={() =>
+                handleDownloadTarget({
+                  id: stem.id,
+                  name: `${formatStemName(stem.type)}.wav`,
+                  url: stem.url,
+                  mimeType: "audio/wav",
+                })
+              }
             />
           ))}
         </View>
@@ -145,7 +224,14 @@ export default function ExportScreen() {
                 isDownloading={downloadingId === `midi-${stem.id}`}
                 isDownloaded={downloadedStems.has(`midi-${stem.id}`)}
                 onDownload={() =>
-                  handleDownloadStem(`midi-${stem.id}`, `${formatStemName(stem.type)} MIDI`)
+                  stem.midiUrl
+                    ? handleDownloadTarget({
+                        id: `midi-${stem.id}`,
+                        name: `${formatStemName(stem.type)}.mid`,
+                        url: stem.midiUrl,
+                        mimeType: "audio/midi",
+                      })
+                    : undefined
                 }
               />
             ))}
